@@ -1,0 +1,319 @@
+import sys
+import os
+import argparse
+import logging
+import psycopg2
+from psycopg2.extras import DictCursor
+
+
+from time import time
+
+__version__ = '0.1'
+__date__ = '30Sep2016'
+__author__ = 'ulf.schaefer@phe.gov.uk'
+
+# --------------------------------------------------------------------------------------------------
+
+def parse_args():
+    """
+    Parge arguments
+    Parameters
+    ----------
+    no inputs
+    Returns
+    -------
+    oArgs: obj
+        arguments object
+    """
+
+    sDescription = 'version %s, date %s, author %s' %(__version__, __date__, __author__)
+
+    parser = argparse.ArgumentParser(description=sDescription)
+
+    parser.add_argument("--oldconnstring",
+                        "-o",
+                        type=str,
+                        metavar="CONNECTION",
+                        required=True,
+                        dest="olddb",
+                        help="Connection string for old db ('source')")
+
+    parser.add_argument("--newconnstring",
+                        "-n",
+                        type=str,
+                        metavar="CONNECTION",
+                        required=True,
+                        dest="newdb",
+                        help="Connection string for new db ('target')")
+
+    parser.add_argument("--debug",
+                        action='store_true',
+                        help="Version of old db. Can be 1 or 2.")
+
+    oArgs = parser.parse_args()
+    return oArgs
+
+# --------------------------------------------------------------------------------------------------
+
+def main():
+    '''
+    Main funtion
+    Parameters
+    ----------
+    no inputs
+    Returns
+    -------
+    0
+    Creates all logs and result files
+    '''
+    oArgs = parse_args()
+
+    log_level = logging.DEBUG if oArgs.debug else logging.INFO
+    logging.basicConfig(format="[%(asctime)s] %(levelname)s: %(message)s", level=log_level)
+
+    try:
+        # open source db
+        source_conn = psycopg2.connect(oArgs.olddb)
+        source_cur = source_conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        # open target db
+        target_conn = psycopg2.connect(oArgs.newdb)
+        target_cur = target_conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        logging.info("Starting to migrate samples and clusters.")
+        all_sample_names = migrate_samples_and_clusters(source_cur, target_cur)
+        logging.info("Completed migration of samples and clusters.")
+
+        all_contigs = migrate_contigs(source_cur, target_cur)
+
+        logging.info("Starting to migrate variants.")
+        migrate_variants(source_cur, target_cur, all_sample_names)
+        logging.info("Completed variants migration.")
+
+        target_conn.commit()
+
+    except SystemExit as e:
+        logging.error("Could not complete migration because: %s" % (str(e)))
+    except psycopg2.Error as e:
+         logging.error("Database reported error: %s" % (str(e)))
+    finally:
+        # close all dbs
+        source_cur.close()
+        source_conn.close()
+        target_cur.close()
+        target_conn.close()
+
+    return 0
+
+# end of main --------------------------------------------------------------------------------------
+
+def migrate_contigs(source_cur, target_cur):
+    """
+    Function to migrate the contig information.
+
+    Parameters
+    ----------
+    source_cur: obj
+        database cursor
+    target_cur: obj
+        database cursor
+
+    Returns
+    -------
+    all_contigs: set
+        names of all contigs
+    """
+
+    all_contigs = set()
+
+    for tbl in ['variants', 'ignored_pos']:
+        sql = "SELECT DISTINCT contig FROM %s" % (tbl)
+        source_cur.execute(sql)
+        rows = source_cur.fetchall()
+        all_contigs.update([row['contig'] for row in rows])
+
+    for contig in all_contigs:
+        sql = "INSERT INTO contigs (name) VALUES (%s)"
+        target_cur.execute(sql, (contig, ))
+
+    return all_contigs
+
+# --------------------------------------------------------------------------------------------------
+
+def migrate_variants(source_cur, target_cur, all_sample_names):
+    """
+    Function to migrate the variant information.
+
+    Parameters
+    ----------
+    source_cur: obj
+        database cursor
+    target_cur: obj
+        database cursor
+    all_sample_names: set
+        set with all samples names in db
+
+
+    Returns
+    -------
+    no return,
+    """
+
+    dContigs = {}
+    sql = "SELECT pk_id, name FROM contigs"
+    target_cur.execute(sql)
+    rows = target_cur.fetchall()
+    dContigs = {r['name']: r['pk_id'] for r in rows}
+
+    dVars = {}
+    sql = "SELECT id, pos, var_base, contig FROM variants"
+    source_cur.execute(sql)
+    rows = source_cur.fetchall()
+    for r in rows:
+        dVars[r['id']] = {'pos': r['pos'] , 'var_base': r['var_base'], 'contig': r['contig']}
+
+    dIgn = {}
+    sql = "SELECT id, pos, contig FROM ignored_pos"
+    source_cur.execute(sql)
+    rows = source_cur.fetchall()
+    for r in rows:
+        dIgn[r['id']] = {'pos': r['pos'] , 'contig': r['contig']}
+
+    data = []
+
+    for sam in all_sample_names:
+
+        logging.info("Reformatting variants for %s", sam)
+
+        sql = "SELECT pk_id FROM samples WHERE sample_name=%s"
+        target_cur.execute(sql, (sam, ))
+        sample_id = target_cur.fetchone()[0]
+
+
+        sql = "SELECT id, name, variants_id, ignored_pos FROM strains_snps WHERE name=%s ORDER BY id DESC"
+        source_cur.execute(sql, (sam, ))
+        rows = source_cur.fetchall()
+        # if a samples has multiple sets of varients that are different to each other use the one with
+        # the highest id, which is the first element in rows because of the above "ORDER BY id DESC"
+        if len(rows) > 1:
+            if len(rows) != rows.count(rows[0]):
+                mess = "Multiple sets of different variant information found for sample %s. Using most recent." % (sam)
+                logging.warning(mess)
+        # let hope this is an ignore sample ...
+        if len(rows) < 1:
+            logging.warning("No variant information found for %s.", sam)
+            continue
+
+        sample_vars = {}
+        for conname in dContigs.keys():
+            sample_vars[conname] = {'A': set(), 'C': set(), 'G': set(), 'T': set()}
+
+        r = rows[0]
+        for vid in r['variants_id']:
+            vb = dVars[vid]['var_base']
+            p = dVars[vid]['pos']
+            contig_name = dVars[vid]['contig']
+            sample_vars[contig_name][vb].add(p)
+
+        for conname in dContigs.keys():
+            sample_vars[conname]['N'] = set([dIgn[iid]['pos'] for iid in r['ignored_pos'] if dIgn[iid]['contig'] == conname])
+
+        for conname, contig_id in dContigs.iteritems():
+            data.append((sample_id,
+                         contig_id,
+                         list(sample_vars[conname]['A']),
+                         list(sample_vars[conname]['C']),
+                         list(sample_vars[conname]['G']),
+                         list(sample_vars[conname]['T']),
+                         list(sample_vars[conname]['N'])))
+
+    logging.info("Adding all variants to db.")
+    target_cur.executemany("INSERT INTO variants (fk_sample_id, fk_contig_id, a_pos, c_pos, g_pos, t_pos, n_pos) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+
+    return
+
+# --------------------------------------------------------------------------------------------------
+
+def migrate_samples_and_clusters(source_cur, target_cur):
+    """
+    Function to migrate the samples into the samples table of the new database.
+
+    Parameters
+    ----------
+    source_cur: obj
+        database cursor
+    target_cur: obj
+        database cursor
+
+    Returns
+    -------
+    all_sample_names: set
+        set with all samples names in db
+    could raise SystemExit
+    """
+
+    # get set of all samples names as the union of what the names found in
+    # strain_clusters, strain_stats, and strains_snps
+    all_sample_names = set()
+
+    for tbl in ['strain_clusters', 'strain_stats', 'strains_snps']:
+
+        sql = "SELECT DISTINCT name FROM %s" % (tbl)
+        source_cur.execute(sql)
+        rows = source_cur.fetchall()
+        all_sample_names.update([row['name'] for row in rows])
+
+    logging.info("Found %i distinct sample names in source database.", len(all_sample_names))
+
+    # for each of these names ...
+    for sam in all_sample_names:
+
+        # ... make an entry in the samples table and get the primary sample id
+        sql = "INSERT INTO samples (sample_name) VALUES (%s) RETURNING pk_id"
+        target_cur.execute(sql, (sam, ))
+        sample_pkid = target_cur.fetchone()[0]
+
+        # .. get the relevant information from strain stats
+        sql = "SELECT time_of_upload, ignore FROM strain_stats WHERE name=%s ORDER BY time_of_upload ASC"
+        source_cur.execute(sql, (sam, ))
+        rows = source_cur.fetchall()
+
+        # if there is more than one row for this sampke in strain_stats, print a warning
+        if len(rows) > 1:
+            logging.warning("More than one row found in strain_stats for sample %s. Only the most recent will be migrated.", sam)
+
+        # update data in samples table -> overwritten by last entry in rows if more than one
+        # last entry is most recent because of the "ORDER BY time_of_upload ASC" above
+        for r in rows:
+            ignore_flag = False
+            if r['ignore'] != None:
+                ignore_flag = True
+            sql = "UPDATE samples SET (date_added, ignore_sample) = (%s, %s) WHERE pk_id=%s"
+            target_cur.execute(sql, (r['time_of_upload'], ignore_flag, sample_pkid, ))
+
+        # get clustering information from strain_clusters
+        sql = "SELECT t0, t5, t10, t25, t50, t100, t250 FROM strain_clusters WHERE name=%s"
+        source_cur.execute(sql, (sam, ))
+        rows = source_cur.fetchall()
+        # abandon all hope if there is conflicting information about the clustering
+        if len(rows) > 1:
+            if len(rows) != rows.count(rows[0]):
+                mess = "Multiple sets of different clustering information found for sample %s. Could not migrate database." % (sam)
+                logging.error(mess)
+                raise SystemExit(mess)
+        # let hope this is an ignore sample ...
+        if len(rows) < 1:
+            logging.warning("No clustering information found for %s.", sam)
+            continue
+
+        # else enter clustering informatin in sample_clusters
+        r = rows[0]
+        sql = "INSERT INTO sample_clusters (fk_sample_id, t0, t5, t10, t25, t50, t100, t250) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
+        target_cur.execute(sql, (sample_pkid, r['t0'], r['t5'], r['t10'], r['t25'], r['t50'], r['t100'], r['t250'], ))
+
+    return all_sample_names
+
+# --------------------------------------------------------------------------------------------------
+
+if __name__ == '__main__':
+    sys.exit(main())
