@@ -4,7 +4,7 @@ import argparse
 import logging
 import psycopg2
 from psycopg2.extras import DictCursor
-
+from math import sqrt
 
 from time import time
 
@@ -90,6 +90,17 @@ def main():
         migrate_variants(source_cur, target_cur, all_sample_names)
         logging.info("Completed variants migration.")
 
+        logging.info("Reading distance matrix into memory.")
+        dm = {}
+        read_distance_matrix(source_cur, dm)
+        logging.info("Completed reading distance matrix.")
+
+        logging.info("Calculating per cluster stats.")
+        calculate_per_cluster_stats(source_cur, target_cur, dm)
+        logging.info("Completed per cluster sample stats")
+
+
+
         target_conn.commit()
 
     except SystemExit as e:
@@ -106,6 +117,123 @@ def main():
     return 0
 
 # end of main --------------------------------------------------------------------------------------
+
+def calculate_per_cluster_stats(source_cur, target_cur, dm):
+    """
+    Bla
+
+    Parameters
+    ----------
+    source_cur: obj
+        database cursor
+    target_cur: obj
+        database cursor
+    dm: dict
+        container for distance matrix
+
+    Returns
+    -------
+
+    """
+
+    for lvl in ['t0', 't5', 't10', 't25', 't50', 't100', 't250']:
+
+        sql = "SELECT %s, count(DISTINCT fk_sample_id) AS nof_members FROM sample_clusters GROUP BY %s" % (lvl, lvl)
+        target_cur.execute(sql)
+        rows = target_cur.fetchall()
+        logging.info("Processing %i clusters at level %s", len(rows), lvl)
+        for r in rows:
+
+            # cluster 'name'
+            clu = r[lvl]
+            # number of members and number of pairwise dists
+            nof_mems = r['nof_members']
+            nof_pw_dists = ((nof_mems**2) - nof_mems) / 2
+
+            # if we have only one member we have no pw dists and we cannot compute mean and ssd
+            if nof_pw_dists > 0:
+                sql = "SELECT s.sample_name FROM samples s, sample_clusters c WHERE c.fk_sample_id=s.pk_id AND c." + lvl + "=%s"
+                target_cur.execute(sql, (clu, ))
+                clu_samples = [x['sample_name'] for x in target_cur.fetchall()]
+
+                # check this complies with the count from above
+                assert len(clu_samples) == nof_mems
+
+                clu_dists = get_pw_dists(clu_samples, dm)
+
+                # check we get the expected number of distances back
+                assert len(clu_dists) == nof_pw_dists
+
+                mean_pw_dists = sum(clu_dists) / float(nof_pw_dists)
+                ssd = sum([(x-mean_pw_dists)**2 for x in clu_dists])
+                sd = sqrt(ssd / nof_pw_dists)
+            else:
+                mean_pw_dists = None
+                sd = None
+
+            sql = "INSERT INTO cluster_stats (cluster_level, cluster_name, nof_members, nof_pairwise_dists, mean_pwise_dist, stddev) VALUES (%s, %s, %s, %s, %s, %s)"
+            target_cur.execute(sql, (lvl, clu, nof_mems, nof_pw_dists, mean_pw_dists, sd, ))
+
+    return 0
+
+# --------------------------------------------------------------------------------------------------
+def get_pw_dists(samples, dm):
+    """
+    Get all pairwise distances between the sampkes in the list.
+
+    Parameters
+    ----------
+    samples: list
+        list of sample names
+    dm: dict
+        container for distance matrix
+
+    Returns
+    -------
+    dists: list
+        list of integers the distances
+    """
+
+    dists = []
+    for i, s1 in enumerate(samples):
+        for j, s2 in enumerate(samples):
+            if i>j:
+                try:
+                    dists.append(dm[s1][s2])
+                except KeyError:
+                    dists.append(dm[s2][s1])
+    return dists
+
+# --------------------------------------------------------------------------------------------------
+
+def read_distance_matrix(source_cur, dm):
+    """
+    Function to migrate the contig information.
+
+    Parameters
+    ----------
+    source_cur: obj
+        database cursor
+    dm: dict
+        container for distance matrix
+
+    Returns
+    -------
+    no returns, but writes to dm
+    """
+
+    sql = "SELECT strain1, strain2, snp_dist FROM dist_matrix"
+    source_cur.execute(sql)
+    rows = source_cur.fetchall()
+    for r in rows:
+        try:
+            dm[r['strain1']][r['strain2']] = r['snp_dist']
+        except KeyError:
+            dm[r['strain1']] = {r['strain2']: r['snp_dist']}
+
+    return 0
+
+# --------------------------------------------------------------------------------------------------
 
 def migrate_contigs(source_cur, target_cur):
     """
@@ -159,6 +287,7 @@ def migrate_variants(source_cur, target_cur, all_sample_names):
     no return,
     """
 
+    # read contig variant and ignore position information into dicts
     dContigs = {}
     sql = "SELECT pk_id, name FROM contigs"
     target_cur.execute(sql)
@@ -179,17 +308,16 @@ def migrate_variants(source_cur, target_cur, all_sample_names):
     for r in rows:
         dIgn[r['id']] = {'pos': r['pos'] , 'contig': r['contig']}
 
-    data = []
-
     for sam in all_sample_names:
 
         logging.info("Reformatting variants for %s", sam)
 
+        # get the sample id for this sample
         sql = "SELECT pk_id FROM samples WHERE sample_name=%s"
         target_cur.execute(sql, (sam, ))
         sample_id = target_cur.fetchone()[0]
 
-
+        # get the infor from the variant table about this sample
         sql = "SELECT id, name, variants_id, ignored_pos FROM strains_snps WHERE name=%s ORDER BY id DESC"
         source_cur.execute(sql, (sam, ))
         rows = source_cur.fetchall()
@@ -204,20 +332,25 @@ def migrate_variants(source_cur, target_cur, all_sample_names):
             logging.warning("No variant information found for %s.", sam)
             continue
 
+        # initialise a variant container for this sample with A, C, G, T
         sample_vars = {}
         for conname in dContigs.keys():
             sample_vars[conname] = {'A': set(), 'C': set(), 'G': set(), 'T': set()}
 
         r = rows[0]
         for vid in r['variants_id']:
+            # get relavent infomation for this variant from the dict
             vb = dVars[vid]['var_base']
             p = dVars[vid]['pos']
             contig_name = dVars[vid]['contig']
+            # add variant to set
             sample_vars[contig_name][vb].add(p)
 
+        # create and add N pos set for each contig in one go
         for conname in dContigs.keys():
             sample_vars[conname]['N'] = set([dIgn[iid]['pos'] for iid in r['ignored_pos'] if dIgn[iid]['contig'] == conname])
 
+        data = []
         for conname, contig_id in dContigs.iteritems():
             data.append((sample_id,
                          contig_id,
@@ -226,9 +359,10 @@ def migrate_variants(source_cur, target_cur, all_sample_names):
                          list(sample_vars[conname]['G']),
                          list(sample_vars[conname]['T']),
                          list(sample_vars[conname]['N'])))
+        sql = "INSERT INTO variants (fk_sample_id, fk_contig_id, a_pos, c_pos, g_pos, t_pos, n_pos) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+        target_cur.executemany(sql, data)
 
-    logging.info("Adding all variants to db.")
-    target_cur.executemany("INSERT INTO variants (fk_sample_id, fk_contig_id, a_pos, c_pos, g_pos, t_pos, n_pos) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+    logging.info("Added all variants to db.")
 
     return
 
