@@ -96,10 +96,12 @@ def main():
         logging.info("Completed reading distance matrix.")
 
         logging.info("Calculating per cluster stats.")
-        calculate_per_cluster_stats(source_cur, target_cur, dm)
-        logging.info("Completed per cluster sample stats")
+        calculate_per_cluster_stats(target_cur, dm)
+        logging.info("Completed per cluster stats")
 
-
+        logging.info("Calculating per sample cluster stats.")
+        calculate_per_sample_cluster_stats(target_cur, dm)
+        logging.info("Completed per sample cluster stats")
 
         target_conn.commit()
 
@@ -118,14 +120,13 @@ def main():
 
 # end of main --------------------------------------------------------------------------------------
 
-def calculate_per_cluster_stats(source_cur, target_cur, dm):
+def calculate_per_sample_cluster_stats(target_cur, dm):
     """
-    Bla
+    For each sample in each of its clusters calculate the mean distance of this sample to all other
+    cluster members and update the sample_clusters table.
 
     Parameters
     ----------
-    source_cur: obj
-        database cursor
     target_cur: obj
         database cursor
     dm: dict
@@ -133,7 +134,60 @@ def calculate_per_cluster_stats(source_cur, target_cur, dm):
 
     Returns
     -------
+    always 0
+    """
 
+    sql = "SELECT pk_id, fk_sample_id, t0, t5, t10, t25, t50, t100, t250 FROM sample_clusters"
+    target_cur.execute(sql)
+    rows = target_cur.fetchall()
+    for r in rows:
+
+        sql = "SELECT sample_name FROM samples WHERE pk_id=%s"
+        target_cur.execute(sql, (r['fk_sample_id'], ))
+        sample_name = target_cur.fetchone()[0]
+
+        means = {}
+
+        for lvl in ['t0', 't5', 't10', 't25', 't50', 't100', 't250']:
+
+            sql = "SELECT s.sample_name AS samplename FROM samples s, sample_clusters c WHERE c.fk_sample_id=s.pk_id AND c."+lvl+"=%s AND c.fk_sample_id!=%s"
+            target_cur.execute(sql, (r[lvl], r['fk_sample_id'], ))
+
+            if target_cur.rowcount <= 0:
+                means[lvl] = None
+            else:
+                other_dists = []
+                rows2 = target_cur.fetchall()
+                for sam in [r2['samplename'] for r2 in rows2]:
+                    try:
+                        other_dists.append(dm[sam][sample_name])
+                    except KeyError:
+                        other_dists.append(dm[sample_name][sam])
+                means[lvl] = sum(other_dists)/float(len(other_dists))
+
+        assert len(means.keys()) == 7
+
+        sql = "UPDATE sample_clusters SET (t0_mean, t5_mean, t10_mean, t25_mean, t50_mean, t100_mean, t250_mean) = (%s, %s, %s, %s, %s, %s, %s) WHERE pk_id=%s"
+        target_cur.execute(sql, (means['t0'], means['t5'], means['t10'], means['t25'], means['t50'], means['t100'], means['t250'], r['pk_id'], ))
+
+    return 0
+
+# --------------------------------------------------------------------------------------------------
+
+def calculate_per_cluster_stats(target_cur, dm):
+    """
+    Calculate statistic for each cluster and add to cluster_stats table.
+
+    Parameters
+    ----------
+    target_cur: obj
+        database cursor
+    dm: dict
+        container for distance matrix
+
+    Returns
+    -------
+    always 0
     """
 
     for lvl in ['t0', 't5', 't10', 't25', 't50', 't100', 't250']:
@@ -159,7 +213,7 @@ def calculate_per_cluster_stats(source_cur, target_cur, dm):
                 # check this complies with the count from above
                 assert len(clu_samples) == nof_mems
 
-                clu_dists = get_pw_dists(clu_samples, dm)
+                clu_dists = get_all_pw_dists(clu_samples, dm)
 
                 # check we get the expected number of distances back
                 assert len(clu_dists) == nof_pw_dists
@@ -177,7 +231,8 @@ def calculate_per_cluster_stats(source_cur, target_cur, dm):
     return 0
 
 # --------------------------------------------------------------------------------------------------
-def get_pw_dists(samples, dm):
+
+def get_all_pw_dists(samples, dm):
     """
     Get all pairwise distances between the sampkes in the list.
 
