@@ -46,10 +46,6 @@ def parse_args():
                         dest="newdb",
                         help="Connection string for new db ('target')")
 
-    parser.add_argument("--debug",
-                        action='store_true',
-                        help="Version of old db. Can be 1 or 2.")
-
     oArgs = parser.parse_args()
     return oArgs
 
@@ -68,8 +64,7 @@ def main():
     '''
     oArgs = parse_args()
 
-    log_level = logging.DEBUG if oArgs.debug else logging.INFO
-    logging.basicConfig(format="[%(asctime)s] %(levelname)s: %(message)s", level=log_level)
+    logging.basicConfig(format="[%(asctime)s] %(levelname)s: %(message)s", level=logging.INFO)
 
     try:
         # open source db
@@ -137,11 +132,13 @@ def calculate_per_sample_cluster_stats(target_cur, dm):
     always 0
     """
 
-    sql = "SELECT pk_id, fk_sample_id, t0, t5, t10, t25, t50, t100, t250 FROM sample_clusters"
+    # get all samples and their clusters from db
+    sql = "SELECT c.pk_id, c.fk_sample_id, c.t0, c.t5, c.t10, c.t25, c.t50, c.t100, c.t250 FROM sample_clusters c, samples s WHERE s.ignore_sample=false AND c.fk_sample_id=s.pk_id"
     target_cur.execute(sql)
     rows = target_cur.fetchall()
     for r in rows:
 
+        # the the name of the current sample
         sql = "SELECT sample_name FROM samples WHERE pk_id=%s"
         target_cur.execute(sql, (r['fk_sample_id'], ))
         sample_name = target_cur.fetchone()[0]
@@ -150,23 +147,32 @@ def calculate_per_sample_cluster_stats(target_cur, dm):
 
         for lvl in ['t0', 't5', 't10', 't25', 't50', 't100', 't250']:
 
-            sql = "SELECT s.sample_name AS samplename FROM samples s, sample_clusters c WHERE c.fk_sample_id=s.pk_id AND c."+lvl+"=%s AND c.fk_sample_id!=%s"
+            # get all other members of this cluster - DO NOT INCLUDE IGNORED SAMPLES
+            sql = "SELECT s.sample_name AS samplename FROM samples s, sample_clusters c WHERE s.ignore_sample=false AND c.fk_sample_id=s.pk_id AND c."+lvl+"=%s AND c.fk_sample_id!=%s"
             target_cur.execute(sql, (r[lvl], r['fk_sample_id'], ))
 
+            # if there are no other members
             if target_cur.rowcount <= 0:
                 means[lvl] = None
             else:
+                # get the distances to all other members and store in list
                 other_dists = []
                 rows2 = target_cur.fetchall()
                 for sam in [r2['samplename'] for r2 in rows2]:
                     try:
                         other_dists.append(dm[sam][sample_name])
                     except KeyError:
-                        other_dists.append(dm[sample_name][sam])
+                        try:
+                            other_dists.append(dm[sample_name][sam])
+                        except KeyError:
+                            raise SystemExit('Problem with distance matrix. No entry for %s and %s', sample_name, sam)
+                # store mean of distances to other members in dict
                 means[lvl] = sum(other_dists)/float(len(other_dists))
 
+        # check we got all of them
         assert len(means.keys()) == 7
 
+        # update table with mean of all distances of the current cluster to all other members of the sample's clusters
         sql = "UPDATE sample_clusters SET (t0_mean, t5_mean, t10_mean, t25_mean, t50_mean, t100_mean, t250_mean) = (%s, %s, %s, %s, %s, %s, %s) WHERE pk_id=%s"
         target_cur.execute(sql, (means['t0'], means['t5'], means['t10'], means['t25'], means['t50'], means['t100'], means['t250'], r['pk_id'], ))
 
@@ -192,7 +198,8 @@ def calculate_per_cluster_stats(target_cur, dm):
 
     for lvl in ['t0', 't5', 't10', 't25', 't50', 't100', 't250']:
 
-        sql = "SELECT %s, count(DISTINCT fk_sample_id) AS nof_members FROM sample_clusters GROUP BY %s" % (lvl, lvl)
+        # get all clusters on a level and the number of members WITHOUT IGNORE SAMPLES from database
+        sql = "SELECT c.%s, count(DISTINCT c.fk_sample_id) AS nof_members FROM sample_clusters c, samples s WHERE c.fk_sample_id = s.pk_id AND s.ignore_sample=false GROUP BY c.%s" % (lvl, lvl)
         target_cur.execute(sql)
         rows = target_cur.fetchall()
         logging.info("Processing %i clusters at level %s", len(rows), lvl)
@@ -206,7 +213,8 @@ def calculate_per_cluster_stats(target_cur, dm):
 
             # if we have only one member we have no pw dists and we cannot compute mean and ssd
             if nof_pw_dists > 0:
-                sql = "SELECT s.sample_name FROM samples s, sample_clusters c WHERE c.fk_sample_id=s.pk_id AND c." + lvl + "=%s"
+                # get all other members of the cluster DO NOT INCLUDE IGNORED SAMPLE IN COMPUTATION
+                sql = "SELECT s.sample_name FROM samples s, sample_clusters c WHERE s.ignore_sample=false AND c.fk_sample_id=s.pk_id AND c." + lvl + "=%s"
                 target_cur.execute(sql, (clu, ))
                 clu_samples = [x['sample_name'] for x in target_cur.fetchall()]
 
@@ -239,7 +247,7 @@ def get_all_pw_dists(samples, dm):
     Parameters
     ----------
     samples: list
-        list of sample names
+        list of sample names (MUST NOT contain ignored sample)
     dm: dict
         container for distance matrix
 
@@ -247,6 +255,10 @@ def get_all_pw_dists(samples, dm):
     -------
     dists: list
         list of integers the distances
+    raises: SystemExit
+        if the distance matrix in the original database does not contain the distance
+        between to samples that are both not ignored
+
     """
 
     dists = []
@@ -256,7 +268,10 @@ def get_all_pw_dists(samples, dm):
                 try:
                     dists.append(dm[s1][s2])
                 except KeyError:
-                    dists.append(dm[s2][s1])
+                    try:
+                        dists.append(dm[s2][s1])
+                    except KeyError:
+                        raise SystemExit('Problem with distance matrix. No entry for %s and %s', s1, s2)
     return dists
 
 # --------------------------------------------------------------------------------------------------
@@ -342,6 +357,8 @@ def migrate_variants(source_cur, target_cur, all_sample_names):
     no return,
     """
 
+    logging.info("Reading variant and ign position information into memory.")
+
     # read contig variant and ignore position information into dicts
     dContigs = {}
     sql = "SELECT pk_id, name FROM contigs"
@@ -376,7 +393,7 @@ def migrate_variants(source_cur, target_cur, all_sample_names):
         sql = "SELECT id, name, variants_id, ignored_pos FROM strains_snps WHERE name=%s ORDER BY id DESC"
         source_cur.execute(sql, (sam, ))
         rows = source_cur.fetchall()
-        # if a samples has multiple sets of varients that are different to each other use the one with
+        # if a samples has multiple sets of variants that are different to each other use the one with
         # the highest id, which is the first element in rows because of the above "ORDER BY id DESC"
         if len(rows) > 1:
             if len(rows) != rows.count(rows[0]):
