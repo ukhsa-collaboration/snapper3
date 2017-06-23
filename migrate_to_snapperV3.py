@@ -421,6 +421,7 @@ def migrate_variants(source_cur, target_cur, all_sample_names):
         # create and add N pos set for each contig in one go
         for conname in dContigs.keys():
             sample_vars[conname]['N'] = set([dIgn[iid]['pos'] for iid in r['ignored_pos'] if dIgn[iid]['contig'] == conname])
+            sample_vars[conname]['-'] = set()
 
         data = []
         for conname, contig_id in dContigs.iteritems():
@@ -430,8 +431,9 @@ def migrate_variants(source_cur, target_cur, all_sample_names):
                          list(sample_vars[conname]['C']),
                          list(sample_vars[conname]['G']),
                          list(sample_vars[conname]['T']),
-                         list(sample_vars[conname]['N'])))
-        sql = "INSERT INTO variants (fk_sample_id, fk_contig_id, a_pos, c_pos, g_pos, t_pos, n_pos) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+                         list(sample_vars[conname]['N']),
+                         list(sample_vars[conname]['-'])))
+        sql = "INSERT INTO variants (fk_sample_id, fk_contig_id, a_pos, c_pos, g_pos, t_pos, n_pos, gap_pos) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
         target_cur.executemany(sql, data)
 
     logging.info("Added all variants to db.")
