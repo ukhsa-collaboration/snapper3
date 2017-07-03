@@ -92,8 +92,6 @@ def main():
 
     args = vars(get_args().parse_args())
 
-    print args
-
     log_level = logging.DEBUG if args["debug"] else logging.INFO
     logging.basicConfig(format="[%(asctime)s] %(levelname)s: %(message)s",
                             level=log_level)
