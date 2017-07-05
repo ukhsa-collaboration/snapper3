@@ -33,3 +33,24 @@ def check_json_format(data):
     return op
 
 # --------------------------------------------------------------------------------------------------
+
+def get_closest_threshold(i, levels=[0, 5, 10, 25, 50, 100, 250]):
+    """
+
+    Parameters
+    ----------
+
+    Returns
+    -------
+    """
+
+    x = 0
+    try:
+        while levels[x] < i:
+            x += 1
+    except IndexError:
+        # this happens when the closest sample is >250 away
+        return None
+    return levels[x]
+
+# --------------------------------------------------------------------------------------------------

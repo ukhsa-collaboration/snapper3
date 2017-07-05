@@ -79,7 +79,7 @@ def main(args):
     Creates all logs and result files
     '''
 
-    print args
+    logging.debug("Args received: %s", str(args))
 
     try:
         # open db
@@ -98,6 +98,42 @@ def main(args):
             logging.error("Could not get distances from db")
             return 1
 
+
+
+
+
+
+
+        # distances = distances[2:]
+        # distances[5][1] = 5
+        # distances[6][1] = 5
+        #distances = [(x[0], x[1]+16)for x in distances]
+
+
+
+
+
+
+
+        logging.debug("Distances calculated: %s", str(distances))
+
+        nbhood = sndb.get_closest_samples(cur, distances)
+        """
+        nbhood = {'closest_distance': int,
+                  'nearest_t': int,
+                  'closest_sample': int,
+                  'closest_snad': [list of 7 ints]}
+        """
+        logging.debug("Sample neighbourhood: %s", str(nbhood))
+
+        new_snad = sndb.get_new_snp_address(nbhood)
+
+        logging.debug("Proposed SNP address for this sample: %s-%s-%s-%s-%s-%s-%s",
+                      new_snad[6], new_snad[5], new_snad[4], new_snad[3], new_snad[2], new_snad[1], new_snad[0])
+
+        merges = sndb.check_merging_needed(cur, distances, new_snad)
+
+        logging.debug("Merges that would be required to make this assignment: %s", str(merges))
 
         conn.commit()
 
