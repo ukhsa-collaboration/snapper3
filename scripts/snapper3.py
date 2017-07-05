@@ -10,6 +10,7 @@ import logging
 import os
 
 import add_sample
+import cluster_sample
 
 # -------------------------------------------------------------------------------------------------
 
@@ -72,6 +73,13 @@ def get_args():
                           formatter_class=RawTextHelpFormatter,
                           add_help=False)
 
+    subparsers.add_parser("cluster_sample",
+                          description=cluster_sample.get_desc(),
+                          help="Put a sample into clusters.",
+                          parents=[cluster_sample.get_args()],
+                          formatter_class=RawTextHelpFormatter,
+                          add_help=False)
+
     return args
 
 # -------------------------------------------------------------------------------------------------
@@ -102,6 +110,8 @@ def main():
 
     if args["cmd"] == "add_sample":
         return add_sample.main(args)
+    elif args["cmd"] == "cluster_sample":
+        return cluster_sample.main(args)
     return 1
 
 # -------------------------------------------------------------------------------------------------
