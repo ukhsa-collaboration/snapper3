@@ -30,6 +30,14 @@ def parse_args():
 
     parser = argparse.ArgumentParser(description=sDescription)
 
+    parser.add_argument("--reference",
+                         "-r",
+                         type=str,
+                         metavar="REFNAME",
+                         required=True,
+                         dest="ref",
+                         help="The sample_name of the reference genome in the database.")
+
     parser.add_argument("--oldconnstring",
                         "-o",
                         type=str,
@@ -79,10 +87,14 @@ def main():
         all_sample_names = migrate_samples_and_clusters(source_cur, target_cur)
         logging.info("Completed migration of samples and clusters.")
 
+        if oArgs.ref in all_sample_names == False:
+            logging.error("Reference name provided (%s) not found in the database.", oArgs.ref)
+            raise SystemExit("critical error")
+
         all_contigs = migrate_contigs(source_cur, target_cur)
 
         logging.info("Starting to migrate variants.")
-        migrate_variants(source_cur, target_cur, all_sample_names)
+        migrate_variants(oArgs.ref, source_cur, target_cur, all_sample_names)
         logging.info("Completed variants migration.")
 
         logging.info("Reading distance matrix into memory.")
@@ -338,12 +350,14 @@ def migrate_contigs(source_cur, target_cur):
 
 # --------------------------------------------------------------------------------------------------
 
-def migrate_variants(source_cur, target_cur, all_sample_names):
+def migrate_variants(ref, source_cur, target_cur, all_sample_names):
     """
     Function to migrate the variant information.
 
     Parameters
     ----------
+    ref: str
+        name of reference in the database
     source_cur: obj
         database cursor
     target_cur: obj
@@ -380,7 +394,17 @@ def migrate_variants(source_cur, target_cur, all_sample_names):
     for r in rows:
         dIgn[r['id']] = {'pos': r['pos'] , 'contig': r['contig']}
 
+    # add reference to the database first and return the ignore positions as a set
+    ref_ign_pos = add_ref_and_get_ign_pos(ref, source_cur, target_cur, dContigs, dIgn)
+    if ref_ign_pos == None:
+        logging.error("Could not get ref ign pos.")
+        raise SystemExit("critical error")
+
     for sam in all_sample_names:
+
+        # reference is already processed
+        if sam == ref:
+            continue
 
         logging.info("Reformatting variants for %s", sam)
 
@@ -425,6 +449,11 @@ def migrate_variants(source_cur, target_cur, all_sample_names):
 
         data = []
         for conname, contig_id in dContigs.iteritems():
+
+            # remove ignore positions for the reference from all position sets in this sample
+            for x in ['A', 'C', 'G', 'T', 'N', '-']:
+                sample_vars[conname][x].difference_update(ref_ign_pos[conname])
+
             data.append((sample_id,
                          contig_id,
                          list(sample_vars[conname]['A']),
@@ -439,6 +468,75 @@ def migrate_variants(source_cur, target_cur, all_sample_names):
     logging.info("Added all variants to db.")
 
     return
+
+# --------------------------------------------------------------------------------------------------
+
+def add_ref_and_get_ign_pos(ref, source_cur, target_cur, dContigs, dIgn):
+    """
+
+    Parameters
+    ----------
+    ref: str
+        reference name in db
+    source_cur: obj
+        database cursor
+    target_cur: obj
+        database cursor
+    dContigs: dict
+        this one: {r['name']: r['pk_id'] for r in rows}
+    dIgn: dict
+        dIgn[r['id']] = {'pos': r['pos'] , 'contig': r['contig']}
+    Returns
+    -------
+    sample_vars: dict
+        key: contig name, value: set of ign pos
+
+    """
+
+    logging.info("Reformatting variants for referemce %s", ref)
+
+    # get the sample id for this sample
+    sql = "SELECT pk_id FROM samples WHERE sample_name=%s"
+    target_cur.execute(sql, (ref, ))
+    sample_id = target_cur.fetchone()[0]
+
+    # get the infor from the variant table about this sample
+    sql = "SELECT id, ignored_pos FROM strains_snps WHERE name=%s ORDER BY id DESC"
+    source_cur.execute(sql, (ref, ))
+    rows = source_cur.fetchall()
+    # if a samples has multiple sets of variants that are different to each other use the one with
+    # the highest id, which is the first element in rows because of the above "ORDER BY id DESC"
+    if len(rows) > 1:
+        if len(rows) != rows.count(rows[0]):
+            mess = "Multiple sets of different variant information found for sample %s. Using most recent." % (ref)
+            logging.warning(mess)
+    # let hope this is an ignore sample ...
+    if len(rows) < 1:
+        logging.error("No variant information found for %s.", ref)
+        return None
+
+    # initialise a variant container for this sample with A, C, G, T
+    sample_vars = {}
+    r = rows[0]
+
+    # create and add N pos set for each contig in one go
+    for conname in dContigs.keys():
+        sample_vars[conname] = set([dIgn[iid]['pos'] for iid in r['ignored_pos'] if dIgn[iid]['contig'] == conname])
+
+    data = []
+    for conname, contig_id in dContigs.iteritems():
+        data.append((sample_id,
+                     contig_id,
+                     list(),
+                     list(),
+                     list(),
+                     list(),
+                     list(sample_vars[conname]),
+                     list()))
+    sql = "INSERT INTO variants (fk_sample_id, fk_contig_id, a_pos, c_pos, g_pos, t_pos, n_pos, gap_pos) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
+    target_cur.executemany(sql, data)
+
+    return sample_vars
 
 # --------------------------------------------------------------------------------------------------
 
