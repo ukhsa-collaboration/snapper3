@@ -6,4 +6,6 @@ echo "Creating DB: $DB"
 createdb -U ulf -h $HOST $DB
 echo "Creating tables in $DB"
 psql -U ulf -h $HOST $DB < setup_snapper3_db.sql
+echo "Creating functions in $DB"
+psql -U ulf -h $HOST $DB < add_psql_functions.sql
 echo "Finished!"

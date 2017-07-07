@@ -10,6 +10,7 @@ from time import time
 from operator import itemgetter
 
 from lib.utils import get_closest_threshold
+from lib.ClusterStats import ClusterStats
 
 # --------------------------------------------------------------------------------------------------
 
@@ -221,6 +222,113 @@ def check_merging_needed(cur, distances, new_snad, levels=[0, 5, 10, 25, 50, 100
     return merges
 
 # --------------------------------------------------------------------------------------------------
+
+def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25, 50, 100, 250]):
+    """
+    Check the zscores of putting a new sample in the clusters proposed, considering merges.
+
+
+    Parameters
+    ----------
+    cur: obj
+        database cursor
+    distances: list of tuples
+        sorted list of tuples with (sample_id, distance) with closes sample first
+        e.g. [(298, 0), (37, 3), (55, 4)]
+    new_snad: list
+        [t0 or None, t5 or None, t10, t25, t50, t100, t250]
+    nbhood: dict
+        {'closest_distance': int,
+         'nearest_t': int,
+         'closest_sample': int,
+         'closest_snad': [list of 7 ints]}
+    merges: dict
+        {lvl: [list of clusters that need merging - could be >2]}
+    Returns
+    -------
+    fail: boolean
+        False if all successful, True if failure
+    info: list
+        list of str with info what failed
+    None if there is a problem
+    """
+
+    fail = False
+    info = []
+
+    for (clu, lvl) in zip(new_snad, levels):
+
+        # new cluster at this level, no check required
+        if clu == None:
+            continue
+
+        # get existing stats for this sample and create ClusterStats obj
+        t_lvl = 't%i' % lvl
+        sql = "SELECT nof_members, nof_pairwise_dists, mean_pwise_dist, stddev FROM cluster_stats WHERE cluster_level=%s AND cluster_name=%s"
+        cur.execute(sql, (t_lvl, clu, ))
+        if cur.rowcount != 1:
+            return None, None
+        row = cur.fetchone()
+        nof_mems = row['nof_members']
+
+        if nof_mems == 1:
+            logging.info("Cluster %s at level %s has only one member. Skipping zscore check.", clu, t_lvl)
+            continue
+
+        oStats = ClusterStats(members=nof_mems, stddev=row['stddev'], mean=row['mean_pwise_dist'])
+
+        # get all current members of this cluster
+        sql = "SELECT fk_sample_id FROM sample_clusters WHERE " + t_lvl + "=%s"
+        cur.execute(sql, (clu, ))
+        assert cur.rowcount == nof_mems
+        rows = cur.fetchall()
+        current_mems = [r['fk_sample_id'] for r in rows]
+
+        # get the mean distance of all current members to the new member
+        all_dist_to_new_mem = [d for (s, d) in distances if s in current_mems]
+        avg_dis = sum(all_dist_to_new_mem) / float(len(current_mems))
+
+        # add a new member to the cluster and update stats
+        oStats.add_member(all_dist_to_new_mem)
+
+        # calculate zscore
+        mean_all_dist_in_c = oStats.mean_pw_dist
+        zscr = (avg_dis - mean_all_dist_in_c) / oStats.stddev_pw_dist
+
+        mess = "z-score of new sample to cluster %s on level %s: %s" % (clu, t_lvl, zscr)
+        logging.debug(mess)
+
+        if zscr <= -1.75:
+            fail = True
+            info.append(mess)
+
+        # do this for all members of the cluster
+        for c_mem in current_mems:
+
+            # get the mean distance of this member to all other members (excluding the one to be added)
+            sql = "SELECT "+t_lvl+"_mean FROM sample_clusters WHERE fk_sample_id=%s"
+            cur.execute(sql, (c_mem, ))
+            if cur.rowcount != 1:
+                return None, None
+            row = cur.fetchone()
+            old_medis = row[t_lvl + '_mean']
+
+            # get the distance of this member to the sample that we want to add to the cluster
+            new_dist = [d for (s, d) in distances if s == c_mem][0]
+
+            # nof_mems is the number of members w/o the sample that we want to add to the cluster
+            # update the mean
+            new_medis = ((old_medis / float(nof_mems - 1)) + new_dist ) / float(nof_mems)
+            zscr = (new_medis - mean_all_dist_in_c) / oStats.stddev_pw_dist
+
+            mess = "z-score of sample %s to cluster %s on level %s incl new member: %s" % (c_mem, clu, t_lvl, zscr)
+            logging.debug(mess)
+
+            if zscr <= -1.75:
+                fail = True
+                info.append(mess)
+
+    return fail, info
 
 # --------------------------------------------------------------------------------------------------
 

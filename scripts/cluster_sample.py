@@ -88,14 +88,14 @@ def main(args):
 
         sample_id = sndb.get_sample_id(cur, args['sample_name'])
         if sample_id < 0:
-            logging.error("Could not get sample id from db")
+            logging.error("Could not get sample id from db. :-(")
             return 1
 
         logging.info("Processing sample %s with id %i", args['sample_name'], sample_id)
 
         distances = sndb.get_relevant_distances(cur, sample_id)
         if distances == None:
-            logging.error("Could not get distances from db")
+            logging.error("Could not get distances from db. :-(")
             return 1
 
 
@@ -134,6 +134,20 @@ def main(args):
         merges = sndb.check_merging_needed(cur, distances, new_snad)
 
         logging.debug("Merges that would be required to make this assignment: %s", str(merges))
+
+        zscore_fail, zscore_info = sndb.check_zscores(cur, distances, new_snad, nbhood, merges)
+
+        if zscore_fail == None:
+            logging.error("Could not calculate z-scores. :-(")
+            return 1
+
+        if zscore_fail == True:
+            logging.error("z-score check for this assignment has failed. Database is not updated.")
+            for s in zscore_info:
+                logging.info(s)
+            return 1
+
+        logging.debug("All z-score checks passed for this assignment.")
 
         conn.commit()
 
