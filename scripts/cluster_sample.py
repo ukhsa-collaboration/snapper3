@@ -102,14 +102,11 @@ def main(args):
 
 
 
-
-
-        # distances = distances[2:]
+        distances = distances[2:]
         # distances[5][1] = 5
-        # distances[6][1] = 5
+        distances[6][1] = 5
         #distances = [(x[0], x[1]+16)for x in distances]
-
-
+        distances += [[298, 0], [37, 3]]
 
 
 
