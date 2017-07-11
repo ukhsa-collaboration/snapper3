@@ -6,11 +6,10 @@ author: ulf.schaefer@phe.gov.uk
 """
 
 import logging
-from time import time
-from operator import itemgetter
 
 from lib.utils import get_closest_threshold
 from lib.ClusterStats import ClusterStats
+from lib.distances import get_distances
 
 # --------------------------------------------------------------------------------------------------
 
@@ -48,87 +47,6 @@ def get_sample_id(cur, name):
 
     return sample_id
 
-# --------------------------------------------------------------------------------------------------
-
-def get_relevant_distances(cur, sample_id):
-    """
-    Get the distances to this sample from the database.
-
-    Parameters
-    ----------
-    cur: obj
-        database cursor
-    sample_id: int
-        sample pk_id
-
-    Returns
-    -------
-    d: list of tuples
-        sorted list of tuples with (sample_id, distance) with closes sample first
-        e.g. [(298, 0), (37, 3), (55, 4)]
-        None if fail
-    """
-
-    # get the relevant samples from the database, these are the ones that have been clustered and are not ignored
-    sql = "SELECT c.fk_sample_id FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND s.ignore_sample IS FALSE"
-    cur.execute(sql)
-    rows = cur.fetchall()
-    relv_samples = [r['fk_sample_id'] for r in rows]
-
-    d = get_distances(cur, sample_id, relv_samples)
-
-    return d
-
-# --------------------------------------------------------------------------------------------------
-
-def get_distances(cur, samid, others):
-    """
-    Get the distances of this sample to the other samples from the database.
-
-    Parameters
-    ----------
-    cur: obj
-        database cursor
-    sample_id: int
-        sample pk_id
-    others: list of int
-        other samples to calculate the distance to
-
-    Returns
-    -------
-    d: list of tuples
-        sorted list of tuples with (sample_id, distance) with closes sample first
-        e.g. [(298, 0), (37, 3), (55, 4)]
-        None if fail
-    """
-
-    # get list of contig ids from database
-    sql = "SELECT pk_id FROM contigs"
-    cur.execute(sql)
-    rows = cur.fetchall()
-    contig_ids = [r['pk_id'] for r in rows]
-
-    d = {}
-    for cid in contig_ids:
-        t0 = time()
-        cur.callproc("get_sample_distances_by_id", [samid, cid, others])
-        result = cur.fetchall()
-        t1 = time()
-        logging.info("Calculated %i distances on contig %i with 'get_sample_distances_by_id' in %.3f seconds", len(result), cid, t1 - t0)
-
-        # sum up if there are more than one contigs
-        for res in result:
-            if res[2] == None:
-                res[2] = 0
-            try:
-                d[res[0]] += res[2]
-            except KeyError:
-                d[res[0]] = res[2]
-
-    # d = sorted(d.items(), key=itemgetter(1), reverse=False)
-    d = sorted([list(x) for x in d.items()], key=itemgetter(1), reverse=False)
-
-    return d
 
 # --------------------------------------------------------------------------------------------------
 
@@ -255,7 +173,6 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
     """
     Check the zscores of putting a new sample in the clusters proposed, considering merges.
 
-
     Parameters
     ----------
     cur: obj
@@ -317,6 +234,7 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
         # if we need to merge
         if merges.has_key(lvl):
 
+            # if there is a merge, we first need to calculate the stats for the newly created merged cluster
             logging.warning("Merge required at level %s between clusters %s. z-score will be checked for the new cluster resulting from this merge!", lvl, str(merges[lvl]))
             oStats, current_mems = get_stats_for_merge(cur, lvl, merges)
 
@@ -325,9 +243,10 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
                 logging.info("Cluster %s at level %s has only one member. Skipping zscore check.", clu, t_lvl)
                 continue
 
+            # if there is no merge we can just take the stats as stored in the db
             oStats = ClusterStats(members=nof_mems, stddev=row['stddev'], mean=row['mean_pwise_dist'])
 
-        # print oStats
+        print "current_mems2", current_mems
 
         # get the mean distance of all current members to the new member
         all_dist_to_new_mem = [d for (s, d) in distances if s in current_mems]
@@ -338,7 +257,7 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
 
         # calculate zscore
         mean_all_dist_in_c = oStats.mean_pw_dist
-        zscr = (avg_dis - mean_all_dist_in_c) / oStats.stddev_pw_dist
+        zscr = (mean_all_dist_in_c - avg_dis) / oStats.stddev_pw_dist
 
         mess = "z-score of new sample to cluster %s on level %s: %s" % (clu, t_lvl, zscr)
         logging.debug(mess)
@@ -351,27 +270,37 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
         nof_mems = len(current_mems)
         for c_mem in current_mems:
 
-            # get the mean distance of this member to all other members (excluding the one to be added)
-            sql = "SELECT "+t_lvl+"_mean FROM sample_clusters WHERE fk_sample_id=%s"
-            cur.execute(sql, (c_mem, ))
-            if cur.rowcount != 1:
-                return None, None
-            row = cur.fetchone()
-            old_medis = row[t_lvl + '_mean']
+            print "c_mem:", c_mem, "t_lvl:", t_lvl
+
+            # get the mean distance of this sample to all other samples in the cluster (w/o the one to be added)
+            old_medis = None
+            if merges.has_key(lvl) == True:
+                # there was a merge, so we can't use what's in the db
+                old_medis = get_mean_distance_for_merged_cluster(cur, c_mem, current_mems)
+            else:
+                # if there was no merge, get the mean distance of this member to all other members
+                # (excluding the one to be added) from the database
+                sql = "SELECT "+t_lvl+"_mean FROM sample_clusters WHERE fk_sample_id=%s"
+                cur.execute(sql, (c_mem, ))
+                if cur.rowcount != 1:
+                    return None, None
+                row = cur.fetchone()
+                old_medis = row[t_lvl + '_mean']
 
             # get the distance of this member to the sample that we want to add to the cluster
             new_dist = [d for (s, d) in distances if s == c_mem][0]
-
-            # nof_mems is the number of members w/o the sample that we want to add to the cluster
-            # update the mean
 
             print "old_medis", old_medis
             print "nof_mems", nof_mems
             print "new_dist", new_dist
 
+            # nof_mems is the number of members w/o the sample that we want to add to the cluster
+            # update the mean distance with the new distance and calculate the z-score
+            new_medis = ((old_medis * (nof_mems - 1)) + new_dist ) / float(nof_mems)
 
-            new_medis = ((old_medis / float(nof_mems - 1)) + new_dist ) / float(nof_mems)
-            zscr = (new_medis - mean_all_dist_in_c) / oStats.stddev_pw_dist
+            print "new_medis", new_medis
+
+            zscr = (mean_all_dist_in_c - new_medis) / oStats.stddev_pw_dist
 
             mess = "z-score of sample %s to cluster %s on level %s incl new member: %s" % (c_mem, clu, t_lvl, zscr)
             # logging.debug(mess)
@@ -383,66 +312,43 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
     return fail, info
 
 # --------------------------------------------------------------------------------------------------
-def get_all_pw_dists(cur, samids):
-    """
-    Get all pirwise distances between the samp,es in the input list.
 
+def get_mean_distance_for_merged_cluster(cur, samid, mems):
+    """
+    Get the mean distance of a sample (samid) to all samples in the mems list.
 
     Parameters
     ----------
     cur: obj
         database cursor
-    samids: list of int
-        sample ids
-
+    samid: int
+        sample_id
+    mems: list of int
+        all members if this cluster
     Returns
     -------
-    dists: lists of ints
-        lists with distances
-    None if there is a problem
+    m: float
+        mean distance
     """
 
-    print "samids", samids
+    m = None
+    assert samid in mems
+    others = [x for x in mems if x != samid]
+    dists = get_distances(cur, samid, others)
+    d = [d for (s, d) in dists]
+    assert len(d) == len(others)
+    m = sum(d) / float(len(d))
+    return m
 
-    # get list of contig ids from database
-    sql = "SELECT pk_id FROM contigs"
-    cur.execute(sql)
-    rows = cur.fetchall()
-    contig_ids = [r['pk_id'] for r in rows]
-
-    samids = set(samids)
-    done = set()
-    dists = []
-
-    for s in samids:
-        # note the ones that are already done, so nothing is calculated twice.
-        done.add(s)
-        oths = samids.difference(done)
-
-        d = {}
-        for cid in contig_ids:
-
-            cur.callproc("get_sample_distances_by_id", [s, cid, list(oths)])
-            result = cur.fetchall()
-
-            for res in result:
-                if res[2] == None:
-                    res[2] = 0
-                try:
-                    d[res[0]] += res[2]
-                except KeyError:
-                    d[res[0]] = res[2]
-
-        dists += d.values()
-
-    assert len(dists) == (len(samids) * (len(samids)-1))/2
-
-    return dists
 # --------------------------------------------------------------------------------------------------
 
 def get_stats_for_merge(cur, lvl, merges):
     """
-    Get all pirwise distances between the samp,es in the input list.
+    Get a stats object for two (or more) clusters after they have been merged:
+    either: get the biggest cluster and get the stats from the database
+            the add on emember at a time from the other cluster(s)
+    or: (if we're merging clusters with only one member) get all pw distances
+        in the merged cluster and create stats object with that
 
     Parameters
     ----------
@@ -514,15 +420,5 @@ def get_stats_for_merge(cur, lvl, merges):
         oStats = ClusterStats(members=len(current_mems), dists=all_pw_dists)
 
     return oStats, current_mems
-
-# --------------------------------------------------------------------------------------------------
-
-# --------------------------------------------------------------------------------------------------
-
-# --------------------------------------------------------------------------------------------------
-
-# --------------------------------------------------------------------------------------------------
-
-# --------------------------------------------------------------------------------------------------
 
 # --------------------------------------------------------------------------------------------------

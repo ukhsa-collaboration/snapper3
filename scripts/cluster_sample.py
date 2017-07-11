@@ -6,6 +6,7 @@ import psycopg2
 from psycopg2.extras import DictCursor
 
 import lib.snapperdb as sndb
+from lib.distances import get_all_pw_dists, get_relevant_distances
 
 # --------------------------------------------------------------------------------------------------
 
@@ -93,7 +94,7 @@ def main(args):
 
         logging.info("Processing sample %s with id %i", args['sample_name'], sample_id)
 
-        distances = sndb.get_relevant_distances(cur, sample_id)
+        distances = get_relevant_distances(cur, sample_id)
         if distances == None:
             logging.error("Could not get distances from db. :-(")
             return 1
@@ -102,11 +103,11 @@ def main(args):
 
 
 
-        distances = distances[2:]
+        # distances = distances[2:]
         # distances[5][1] = 5
-        distances[6][1] = 5
+        # distances[6][1] = 5
         #distances = [(x[0], x[1]+16)for x in distances]
-        distances += [[298, 0], [37, 3]]
+        # distances += [[298, 0], [37, 3]]
 
 
 
