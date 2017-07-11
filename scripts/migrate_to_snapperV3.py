@@ -110,6 +110,8 @@ def main():
         calculate_per_sample_cluster_stats(target_cur, dm)
         logging.info("Completed per sample cluster stats")
 
+        logging.info("MIGRATION SUCCESSFULLY COMPLETED.")
+
         target_conn.commit()
 
     except SystemExit as e:
@@ -145,7 +147,7 @@ def calculate_per_sample_cluster_stats(target_cur, dm):
     """
 
     # get all samples and their clusters from db
-    sql = "SELECT c.pk_id, c.fk_sample_id, c.t0, c.t5, c.t10, c.t25, c.t50, c.t100, c.t250 FROM sample_clusters c, samples s WHERE s.ignore_sample=false AND c.fk_sample_id=s.pk_id"
+    sql = "SELECT c.pk_id, c.fk_sample_id, c.t0, c.t5, c.t10, c.t25, c.t50, c.t100, c.t250 FROM sample_clusters c, samples s WHERE s.ignore_sample=false AND s.ignore_zscore=false AND c.fk_sample_id=s.pk_id"
     target_cur.execute(sql)
     rows = target_cur.fetchall()
     for r in rows:
@@ -160,7 +162,7 @@ def calculate_per_sample_cluster_stats(target_cur, dm):
         for lvl in ['t0', 't5', 't10', 't25', 't50', 't100', 't250']:
 
             # get all other members of this cluster - DO NOT INCLUDE IGNORED SAMPLES
-            sql = "SELECT s.sample_name AS samplename FROM samples s, sample_clusters c WHERE s.ignore_sample=false AND c.fk_sample_id=s.pk_id AND c."+lvl+"=%s AND c.fk_sample_id!=%s"
+            sql = "SELECT s.sample_name AS samplename FROM samples s, sample_clusters c WHERE s.ignore_sample=false AND s.ignore_zscore=false AND c.fk_sample_id=s.pk_id AND c."+lvl+"=%s AND c.fk_sample_id!=%s"
             target_cur.execute(sql, (r[lvl], r['fk_sample_id'], ))
 
             # if there are no other members
@@ -211,7 +213,8 @@ def calculate_per_cluster_stats(target_cur, dm):
     for lvl in ['t0', 't5', 't10', 't25', 't50', 't100', 't250']:
 
         # get all clusters on a level and the number of members WITHOUT IGNORE SAMPLES from database
-        sql = "SELECT c.%s, count(DISTINCT c.fk_sample_id) AS nof_members FROM sample_clusters c, samples s WHERE c.fk_sample_id = s.pk_id AND s.ignore_sample=false GROUP BY c.%s" % (lvl, lvl)
+        # also DON'T INCLUDE zscore_ignore SAMPLES
+        sql = "SELECT c.%s, count(DISTINCT c.fk_sample_id) AS nof_members FROM sample_clusters c, samples s WHERE c.fk_sample_id = s.pk_id AND s.ignore_zscore=false AND s.ignore_sample=false GROUP BY c.%s" % (lvl, lvl)
         target_cur.execute(sql)
         rows = target_cur.fetchall()
         logging.info("Processing %i clusters at level %s", len(rows), lvl)
@@ -226,7 +229,8 @@ def calculate_per_cluster_stats(target_cur, dm):
             # if we have only one member we have no pw dists and we cannot compute mean and ssd
             if nof_pw_dists > 0:
                 # get all other members of the cluster DO NOT INCLUDE IGNORED SAMPLE IN COMPUTATION
-                sql = "SELECT s.sample_name FROM samples s, sample_clusters c WHERE s.ignore_sample=false AND c.fk_sample_id=s.pk_id AND c." + lvl + "=%s"
+                # also DON'T INCLUDE zscore_ignore SAMPLES
+                sql = "SELECT s.sample_name FROM samples s, sample_clusters c WHERE s.ignore_sample=false AND s.ignore_zscore=false AND c.fk_sample_id=s.pk_id AND c." + lvl + "=%s"
                 target_cur.execute(sql, (clu, ))
                 clu_samples = [x['sample_name'] for x in target_cur.fetchall()]
 
@@ -580,7 +584,7 @@ def migrate_samples_and_clusters(source_cur, target_cur):
         sample_pkid = target_cur.fetchone()[0]
 
         # .. get the relevant information from strain stats
-        sql = "SELECT time_of_upload, ignore FROM strain_stats WHERE name=%s ORDER BY time_of_upload ASC"
+        sql = "SELECT time_of_upload, ignore, zscore_check FROM strain_stats WHERE name=%s ORDER BY time_of_upload ASC"
         source_cur.execute(sql, (sam, ))
         rows = source_cur.fetchall()
 
@@ -592,10 +596,13 @@ def migrate_samples_and_clusters(source_cur, target_cur):
         # last entry is most recent because of the "ORDER BY time_of_upload ASC" above
         for r in rows:
             ignore_flag = False
+            zscore_flag = False
             if r['ignore'] != None:
                 ignore_flag = True
-            sql = "UPDATE samples SET (date_added, ignore_sample) = (%s, %s) WHERE pk_id=%s"
-            target_cur.execute(sql, (r['time_of_upload'], ignore_flag, sample_pkid, ))
+            if r['zscore_check'] != None:
+                zscore_flag = True
+            sql = "UPDATE samples SET (date_added, ignore_sample, ignore_zscore) = (%s, %s, %s) WHERE pk_id=%s"
+            target_cur.execute(sql, (r['time_of_upload'], ignore_flag, zscore_flag, sample_pkid, ))
 
         # get clustering information from strain_clusters
         sql = "SELECT t0, t5, t10, t25, t50, t100, t250 FROM strain_clusters WHERE name=%s"

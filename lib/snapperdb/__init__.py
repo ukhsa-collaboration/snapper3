@@ -222,11 +222,11 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
         nof_mems = row['nof_members']
 
         # get all current members of this cluster
-        sql = "SELECT fk_sample_id FROM sample_clusters WHERE " + t_lvl + "=%s"
+        sql = "SELECT s.pk_id as samid FROM samples s, sample_clusters c WHERE c."+t_lvl+"=%s AND s.pk_id=c.fk_sample_id AND s.ignore_zscore IS FALSE"
         cur.execute(sql, (clu, ))
         assert cur.rowcount == nof_mems
         rows = cur.fetchall()
-        current_mems = [r['fk_sample_id'] for r in rows]
+        current_mems = [r['samid'] for r in rows]
 
         print "current_mems1", current_mems
 

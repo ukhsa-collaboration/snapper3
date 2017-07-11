@@ -7,6 +7,7 @@ CREATE TABLE samples (
     molis_id text,
     ngs_id integer,
     ignore_sample boolean DEFAULT FALSE,
+    ignore_zscore boolean DEFAULT FALSE,
     date_added timestamp
 );
 
