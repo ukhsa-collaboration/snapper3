@@ -594,6 +594,7 @@ def migrate_samples_and_clusters(source_cur, target_cur):
 
         # update data in samples table -> overwritten by last entry in rows if more than one
         # last entry is most recent because of the "ORDER BY time_of_upload ASC" above
+        ignore_flag = False
         for r in rows:
             ignore_flag = False
             zscore_flag = False
@@ -603,6 +604,10 @@ def migrate_samples_and_clusters(source_cur, target_cur):
                 zscore_flag = True
             sql = "UPDATE samples SET (date_added, ignore_sample, ignore_zscore) = (%s, %s, %s) WHERE pk_id=%s"
             target_cur.execute(sql, (r['time_of_upload'], ignore_flag, zscore_flag, sample_pkid, ))
+
+        # this sample is ignored -> don't transfer clustering information
+        if ignore_flag == True:
+            continue
 
         # get clustering information from strain_clusters
         sql = "SELECT t0, t5, t10, t25, t50, t100, t250 FROM strain_clusters WHERE name=%s"
@@ -619,7 +624,7 @@ def migrate_samples_and_clusters(source_cur, target_cur):
             logging.warning("No clustering information found for %s.", sam)
             continue
 
-        # else enter clustering informatin in sample_clusters
+        # else enter clustering information in sample_clusters
         r = rows[0]
         sql = "INSERT INTO sample_clusters (fk_sample_id, t0, t5, t10, t25, t50, t100, t250) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
         target_cur.execute(sql, (sample_pkid, r['t0'], r['t5'], r['t10'], r['t25'], r['t50'], r['t100'], r['t250'], ))

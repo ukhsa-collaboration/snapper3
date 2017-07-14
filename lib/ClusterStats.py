@@ -46,14 +46,20 @@ class ClusterStats(object):
             if self.nof_pw_dists != (self.members * (self.members-1))/2.0:
                 raise ClusterStatsError("Nof members and nof distances inconsistent.")
 
-            self.mean_pw_dist = float(sum(kwargs['dists'])/self.nof_pw_dists)
+            if self.nof_pw_dists > 0:
+                self.mean_pw_dist = float(sum(kwargs['dists'])/self.nof_pw_dists)
+                #calculate variance and stddev
+                x = []
+                for d in kwargs['dists']:
+                    x.append((d - self.mean_pw_dist)**2.0)
 
-            #calculate variance and stddev
-            x = []
-            for d in kwargs['dists']:
-                x.append((d - self.mean_pw_dist)**2.0)
-            self.variance_pw_dist = sum(x)/len(x)
-            self.stddev_pw_dist = math.sqrt(self.variance_pw_dist)
+                self.variance_pw_dist = sum(x)/len(x)
+                self.stddev_pw_dist = math.sqrt(self.variance_pw_dist)
+            else:
+                # this is for one member only clusters
+                self.mean_pw_dist = None
+                self.variance_pw_dist = None
+                self.stddev_pw_dist = None
 
         elif kwargs.has_key('stddev') and kwargs.has_key('mean'):
             self.nof_pw_dists = (self.members * (self.members-1))/2.0
@@ -85,28 +91,33 @@ class ClusterStats(object):
 
         assert len(new_dists) == self.members
 
-        for nd in new_dists:
+        if self.members > 1:
+            for nd in new_dists:
+                # remember the mean before updating
+                prev_m = self.mean_pw_dist
 
-            # remember the mean before updating
-            prev_m = self.mean_pw_dist
+                # proxy for the sum of all pw dists
+                sm = self.mean_pw_dist * float(self.nof_pw_dists)
+                # add one new dist to the sum
+                new_sum = sm + nd
+                # we have one more dist at this point
+                self.nof_pw_dists += 1
+                # new mean is new_sum over new nof dists
+                self.mean_pw_dist = new_sum / self.nof_pw_dists
 
-            # proxy for the sum of all pw dists
-            sm = self.mean_pw_dist * float(self.nof_pw_dists)
-            # add one new dist to the sum
-            new_sum = sm + nd
-            # we have one more dist at this point
-            self.nof_pw_dists += 1
-            # new mean is new_sum over new nof dists
-            self.mean_pw_dist = new_sum / self.nof_pw_dists
-
-            # update the variance
-            # see https://math.stackexchange.com/questions/775391
-            N = self.nof_pw_dists
-            a = (N - 1) * (self.variance_pw_dist)
-            b = (nd - self.mean_pw_dist) * (nd - prev_m)
-            self.variance_pw_dist = (a + b) / N
-            self.stddev_pw_dist = math.sqrt(self.variance_pw_dist)
+                # update the variance
+                # see https://math.stackexchange.com/questions/775391
+                N = self.nof_pw_dists
+                a = (N - 1) * (self.variance_pw_dist)
+                b = (nd - self.mean_pw_dist) * (nd - prev_m)
+                self.variance_pw_dist = (a + b) / N
+                self.stddev_pw_dist = math.sqrt(self.variance_pw_dist)
+        else:
+            self.nof_pw_dists = 1
+            self.mean_pw_dist = float(new_dists[0])
+            self.stddev_pw_dist = 0.0
+            self.variance_pw_dist = 0.0
 
         self.members += 1
 
-# ---------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
