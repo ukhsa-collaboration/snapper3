@@ -106,21 +106,7 @@ def main(args):
             logging.error("Could not get distances from db. :-(")
             return 1
 
-
-
-
-
-        # distances = distances[2:]
-        # distances[5][1] = 5
-        # distances[6][1] = 5
-        #distances = [(x[0], x[1]+16)for x in distances]
-        # distances += [[298, 0], [37, 3]]
-
-
-
-
-
-        # logging.debug("Distances calculated: %s", str(distances))
+        logging.debug("Distances calculated: %s", str(distances))
 
         nbhood = sndb.get_closest_samples(cur, distances)
         """
@@ -157,10 +143,12 @@ def main(args):
         else:
             logging.info("User disabled z-score checks for this assignment.")
 
+        logging.debug("Merges that would be required to make this assignment: %s", str([str(m) for m in merges.values()]))
+
         if args['with_registration'] == True:
 
             for lvl in merges.keys():
-                merging.do_the_merge(lvl, merges[lvl])
+                merging.do_the_merge(cur, merges[lvl])
 
             final_snad = regis.register_sample(cur, sample_id, distances, new_snad)
 

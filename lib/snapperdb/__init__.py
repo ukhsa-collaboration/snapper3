@@ -143,7 +143,7 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
          'closest_sample': int,
          'closest_snad': [list of 7 ints]}
     merges: dict
-        {lvl: [list of clusters that need merging - could be >2]}
+        {lvl: ClusterMerge object}
 
     Returns
     -------
@@ -180,13 +180,17 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
         rows = cur.fetchall()
         current_mems = [r['samid'] for r in rows]
 
-        merge_w_cluster = []
+        oStats = None
         # if we need to merge
         if merges.has_key(lvl):
 
             # if there is a merge, we first need to calculate the stats for the newly created merged cluster
             logging.warning("Merge required at level %s between clusters %s. z-score will be checked for the new cluster resulting from this merge!", lvl, str(merges[lvl]))
-            oStats, current_mems = get_stats_for_merge(cur, merges[lvl])
+            current_mems = get_stats_for_merge(cur, merges[lvl])
+            # Create a new ClusterStats object from the values in the ClusterMerge object.
+            # This is because we're adding a member to it below to calculate the zscores.
+            # But we don't want that to happend to the stats object in the merge.
+            oStats = ClusterStats(members=merges[lvl].stats.members, stddev=merges[lvl].stats.stddev_pw_dist, mean=merges[lvl].stats.mean_pw_dist)
 
         else:
             if nof_mems == 1:
@@ -220,6 +224,7 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
 
         # do this for all members of the cluster
         nof_mems = len(current_mems)
+        merge_per_sample_stats = {}
         for c_mem in current_mems:
 
             # get the mean distance of this sample to all other samples in the cluster (w/o the one to be added)
@@ -227,6 +232,7 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
             if merges.has_key(lvl) == True:
                 # there was a merge, so we can't use what's in the db
                 old_medis = get_mean_distance_for_merged_cluster(cur, c_mem, current_mems)
+                merge_per_sample_stats[c_mem] = old_medis
             else:
                 # if there was no merge, get the mean distance of this member to all other members
                 # (excluding the one to be added) from the database
@@ -252,6 +258,10 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
             if zscr <= -1.75:
                 fail = True
                 info.append(mess)
+
+        # if there was a merge we want to remember that we already calculated all this stuff
+        if merges.has_key(lvl) == True:
+            merges[lvl].member_stats = merge_per_sample_stats
 
     return fail, info
 

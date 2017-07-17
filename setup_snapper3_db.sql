@@ -62,4 +62,13 @@ CREATE TABLE cluster_stats (
     stddev real
 );
 
+DROP TABLE IF EXISTS merge_log;
+CREATE TABLE merge_log (
+    pk_id SERIAL PRIMARY KEY,
+    cluster_level text,
+    source_cluster integer,
+    target_cluster integer,
+    time_of_merge timestamp
+);
+
 CREATE EXTENSION intarray;

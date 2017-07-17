@@ -13,7 +13,7 @@ from operator import itemgetter
 
 def get_all_pw_dists(cur, samids):
     """
-    Get all pirwise distances between the samp,es in the input list.
+    Get all pirwise distances between the samples in the input list.
 
 
     Parameters

@@ -6,7 +6,8 @@ author: ulf.schaefer@phe.gov.uk
 """
 
 from lib.distances import get_all_pw_dists, get_distances
-import lib.ClusterMerge as ClusterMerge
+from lib.ClusterMerge import ClusterMerge
+from lib.ClusterStats import ClusterStats
 
 # --------------------------------------------------------------------------------------------------
 
@@ -27,8 +28,8 @@ def check_merging_needed(cur, distances, new_snad, levels=[0, 5, 10, 25, 50, 100
 
     Returns
     -------
-    merges: dist
-        {lvl: ClusterMerge, lvl: ClusterMerge, lvl: ClusterMerge, ...}
+    merges: dict
+        {lvl: ClusterMerge object (with lvl and org members only at this point)}
     """
 
     merges = {}
@@ -85,7 +86,7 @@ def get_stats_for_merge(cur, oMerge):
     # members[clu_id] = [list of sample ids]
     clu_to_merge = oMerge.org_clusters
     members = {}
-    t_lvl = 't%i' % lvl
+    t_lvl = oMerge.t_level
     for ctm in clu_to_merge:
         # get the members for all cluster that need merging, ignoring the clusters that fail zscore
         sql = "SELECT c.fk_sample_id FROM sample_clusters c, samples s WHERE c."+t_lvl+"=%s AND s.pk_id=c.fk_sample_id AND s.ignore_zscore IS FALSE;"
@@ -136,13 +137,13 @@ def get_stats_for_merge(cur, oMerge):
 
     oMerge.final_members = current_mems
 
-    return oMerge.stats, oMerge.final_members
+    return oMerge.final_members
 
 # --------------------------------------------------------------------------------------------------
 
 def do_the_merge(cur, oMerge):
     """
-    Merge the clusters on level lvl
+    Merge the clusters on level lvl.
 
     Parameters
     ----------
@@ -156,8 +157,16 @@ def do_the_merge(cur, oMerge):
     None
     """
 
+    # if we have checked z-scores we already have set the final name and calculated stats for the merge
+    # if this was deactivated by the user we need to do it now.
+    if oMerge.final_name == None:
+        # this calculates ClusterStats for the merged cluster
+        _ = get_stats_for_merge(cur, oMerge)
 
+        # we still need to calculate the mean distance of all members of the merged cluster to all other members
+        oMerge.calculate_per_member_stats(cur)
 
+    oMerge.update_tables(cur)
 
     return None
 

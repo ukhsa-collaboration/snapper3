@@ -5,6 +5,8 @@ author: ulf.schaefer@phe.gov.uk
 
 """
 
+import logging
+
 from lib.ClusterStats import ClusterStats
 
 # --------------------------------------------------------------------------------------------------
@@ -36,7 +38,7 @@ def register_sample(cur, sample_id, distances, new_snad, levels=[0, 5, 10, 25, 5
     means = {}
 
     for lvl, cluster in zip(levels, new_snad):
-        print lvl, cluster
+        logging.debug("Registering sample in cluster %s on level %s.", cluster, lvl)
 
         t_lvl = 't%i' % (lvl)
 
@@ -74,6 +76,7 @@ def register_sample(cur, sample_id, distances, new_snad, levels=[0, 5, 10, 25, 5
             oStats.add_member(dis_to_cu_mems)
 
             # update cluster stats table
+            logging.debug("Updating stats: %s", str(oStats))
             sql  = "UPDATE cluster_stats SET (nof_members, nof_pairwise_dists, mean_pwise_dist, stddev) = (%s, %s, %s, %s) WHERE cluster_name=%s AND cluster_level=%s"
             cur.execute(sql, (oStats.members, oStats.nof_pw_dists, oStats.mean_pw_dist, oStats.stddev_pw_dist, cluster, t_lvl, ))
 
