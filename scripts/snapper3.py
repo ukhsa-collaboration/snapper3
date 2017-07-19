@@ -12,6 +12,7 @@ import os
 import add_sample
 import cluster_sample
 import get_alignment
+import remove_sample
 
 # -------------------------------------------------------------------------------------------------
 
@@ -88,6 +89,13 @@ def get_args():
                           formatter_class=RawTextHelpFormatter,
                           add_help=False)
 
+    subparsers.add_parser("remove_sample",
+                          description=remove_sample.get_desc(),
+                          help="Remove a sample from the database.",
+                          parents=[remove_sample.get_args()],
+                          formatter_class=RawTextHelpFormatter,
+                          add_help=False)
+
     return args
 
 # -------------------------------------------------------------------------------------------------
@@ -122,6 +130,8 @@ def main():
         return cluster_sample.main(args)
     elif args["cmd"] == "get_alignment":
         return get_alignment.main(args)
+    elif args["cmd"] == "remove_sample":
+        return remove_sample.main(args)
     return 1
 
 # -------------------------------------------------------------------------------------------------
