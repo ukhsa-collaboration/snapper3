@@ -11,6 +11,7 @@ import os
 
 import add_sample
 import cluster_sample
+import get_alignment
 
 # -------------------------------------------------------------------------------------------------
 
@@ -80,6 +81,13 @@ def get_args():
                           formatter_class=RawTextHelpFormatter,
                           add_help=False)
 
+    subparsers.add_parser("get_alignment",
+                          description=get_alignment.get_desc(),
+                          help="Get aligned sequences for a set of samples.",
+                          parents=[get_alignment.get_args()],
+                          formatter_class=RawTextHelpFormatter,
+                          add_help=False)
+
     return args
 
 # -------------------------------------------------------------------------------------------------
@@ -112,6 +120,8 @@ def main():
         return add_sample.main(args)
     elif args["cmd"] == "cluster_sample":
         return cluster_sample.main(args)
+    elif args["cmd"] == "get_alignment":
+        return get_alignment.main(args)
     return 1
 
 # -------------------------------------------------------------------------------------------------

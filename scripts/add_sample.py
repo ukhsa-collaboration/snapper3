@@ -9,7 +9,7 @@ from argparse import RawTextHelpFormatter
 import psycopg2
 from psycopg2.extras import DictCursor
 
-from lib.utils import check_json_format
+from lib.utils import get_the_data_from_the_input
 
 # --------------------------------------------------------------------------------------------------
 
@@ -45,11 +45,20 @@ def get_args():
 
     args.add_argument("--input",
                       "-i",
-                      metavar="JSONFILE",
+                      metavar="FILE",
                       required=True,
                       type=str,
                       dest="input",
-                      help="path to a json file")
+                      help="REQUIRED. Path to a input file.")
+
+    args.add_argument("--format",
+                      "-f",
+                      metavar="FORMAT",
+                      required=True,
+                      type=str,
+                      dest="format",
+                      choices=['json', 'fasta'],
+                      help="REQUIRED. Choose from 'json' or 'fasta'.")
 
     args.add_argument("--connstring",
                       "-c",
@@ -57,15 +66,15 @@ def get_args():
                       metavar="CONNECTION",
                       required=True,
                       dest="db",
-                      help="Connection string for db")
+                      help="REQUIRED. Connection string for db.")
 
-    args.add_argument("--reference",
+    args.add_argument("--refname",
                       "-r",
                       type=str,
                       metavar="REFNAME",
                       required=True,
                       dest="refname",
-                      help="The sample_name of the reference genome in the database.")
+                      help="REQUIRED. The sample_name of the reference genome in the database.")
 
     args.add_argument("--sample-name",
                       "-s",
@@ -75,6 +84,13 @@ def get_args():
                       dest="sample_name",
                       help="The name of the sample to go into the db [default: input file name before 1st dot]")
 
+    args.add_argument("--reference",
+                      type=str,
+                      metavar="FASTAFILE",
+                      default=None,
+                      dest="reference",
+                      help="""Path to reference for this sample. Must be the same as used for the database.
+REQUIRED when format is fasta, else ignored.""")
 
     return args
 
@@ -92,21 +108,13 @@ def main(args):
     Creates all logs and result files
     '''
 
-    data = None
-    open_func = gzip.open if args['input'].endswith('.gz') == True else open
-    try:
-        with open_func(args['input']) as data_file:
-            try:
-                data = json.load(data_file)
-            except ValueError:
-                logging.error("Data in %s is corrupted.", args['input'])
-                return 1
-    except IOError:
-        logging.error("Could not open file %s", args['input'])
+    if args['format'] == 'fasta' and args['reference'] == None:
+        logging.error("--reference optrion is REQUIRED when using fasta format input.")
         return 1
 
-    if check_json_format(data) == False:
-        logging.error("Data in %s is not in the correct format. Pleas use the latest version of Phenix to make this file from a filtered vcf.", args['input'])
+    data = get_the_data_from_the_input(args)
+    if data == None:
+        logging.error("An error occured getting the data from the input.")
         return 1
 
     if args['sample_name'] == None:
