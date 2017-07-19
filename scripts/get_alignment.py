@@ -107,9 +107,6 @@ def get_args():
     group_c.add_argument("--exclude",
                          help="Exclude any positions specified in the BED file.")
 
-    args.add_argument("--with-stats",
-                      help="If a path is specified, then position of the outputed SNPs is stored in this file.")
-
     return args
 
 # --------------------------------------------------------------------------------------------------
@@ -168,23 +165,6 @@ def main(args):
         logging.error("There was a problem adding reference data to the data structure.")
         return 1
 
-
-
-
-    return 0
-
-
-
-
-
-
-
-
-
-
-
-
-
     # check that there is no conflicting ref bases by verifying that the
     # intersection between two ref bases sets of positions is always empty
     for (contig, data) in all_contig_data.iteritems():
@@ -240,9 +220,10 @@ def main(args):
     logging.info("Filtering alignment.")
 
     if args["exclude"] or args["include"]:
-        process_bed_file(args, all_contig_data)
+        align.process_bed_file(args, all_contig_data)
 
     if args['remove_invariant_npos'] == True:
+        logging.info("Removing invariant N positions.")
         for (contig, data) in all_contig_data.iteritems():
             # get all positions that are N and all others in all samples except the reference
             n_pos = set()
@@ -262,35 +243,30 @@ def main(args):
                     data[sam][nuc].difference_update(only_n_pos)
 
     if args['sample_Ns']:
-        remove_samples(args, 'sample_Ns', 'N', all_contig_data)
+        align.remove_samples(args, 'sample_Ns', 'N', all_contig_data)
 
     if args['sample_gaps']:
-        remove_samples(args, 'sample_gaps', '-', all_contig_data)
+        align.remove_samples(args, 'sample_gaps', '-', all_contig_data)
 
     if args['column_Ns']:
-        remove_columns(args['column_Ns'], 'N', all_contig_data)
+        align.remove_columns(args['column_Ns'], 'N', all_contig_data)
 
     if args['column_gaps']:
-        remove_columns(args['column_gaps'], '-', all_contig_data)
+        align.remove_columns(args['column_gaps'], '-', all_contig_data)
 
     # finished filtering
     logging.info("Filtering complete.")
 
-    # output stats if required
-    if args["with_stats"] is not None:
-        logging.info("Calculating per position stats.")
-        output_per_position_stats(args["with_stats"], all_contig_data, nof_vcfs)
-
     # output per sample stats
     logging.info("Writing per sample stats.")
-    output_per_sample_stats(all_contig_data)
+    align.output_per_sample_stats(all_contig_data)
 
     # output now
     dSeqs = {}
     for (contig, data) in all_contig_data.iteritems():
         dAlign = {}
         # get all positions
-        if args["reference"]:
+        if args["whole_genome"]:
             # all positions for whole contig when reference is required
             all_pos = {i + 1: i for i in range(len(args["reference"][contig]))}
         else:
@@ -304,7 +280,7 @@ def main(args):
 
         # 'initialise' sequence
         for sample_name in data.keys():
-            if args["reference"]:
+            if args["whole_genome"]:
                 # this is effectively a deepcopy, otherwise we're writing on the same
                 # copy of the reference string for all samples
                 # dAlign[sample_name] = args["reference"][contig]
