@@ -47,7 +47,7 @@ class ClusterStats(object):
                 raise ClusterStatsError("Nof members and nof distances inconsistent.")
 
             if self.nof_pw_dists > 0:
-                self.mean_pw_dist = float(sum(kwargs['dists'])/self.nof_pw_dists)
+                self.mean_pw_dist = float(sum(kwargs['dists']))/self.nof_pw_dists
                 #calculate variance and stddev
                 x = []
                 for d in kwargs['dists']:
@@ -119,5 +119,36 @@ class ClusterStats(object):
             self.variance_pw_dist = 0.0
 
         self.members += 1
+
+    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    def remove_member(self, dists):
+        '''
+        remove a member from the object
+        '''
+
+        assert len(dists) == self.members - 1
+
+        for di in dists:
+            # remember the mean before updating
+            prev_m = self.mean_pw_dist
+
+            # proxy for the sum of all pw dists
+            sm = self.mean_pw_dist * float(self.nof_pw_dists)
+            # take away one dist from the sum
+            new_sum = sm - di
+            # we have one fewer dist at this point
+            self.nof_pw_dists -= 1
+            # new mean is new_sum over new nof dists
+            self.mean_pw_dist = new_sum / self.nof_pw_dists
+
+            # update the variance
+            N = self.nof_pw_dists
+            a = (N + 1) * (self.variance_pw_dist)
+            b = (di - self.mean_pw_dist) * (di - prev_m)
+            self.variance_pw_dist = (a - b) / N
+            self.stddev_pw_dist = math.sqrt(self.variance_pw_dist)
+
+        self.members -= 1
 
 # --------------------------------------------------------------------------------------------------

@@ -13,7 +13,7 @@ from operator import itemgetter
 
 def get_all_pw_dists(cur, samids):
     """
-    Get all pirwise distances between the samples in the input list.
+    Get all pairwise distances between the samples in the input list.
 
 
     Parameters
@@ -144,8 +144,7 @@ def get_distances(cur, samid, others):
             except KeyError:
                 d[res[0]] = res[2]
 
-    # d = sorted(d.items(), key=itemgetter(1), reverse=False)
-    d = sorted([list(x) for x in d.items()], key=itemgetter(1), reverse=False)
+    d = sorted(d.items(), key=itemgetter(1), reverse=False)
 
     return d
 
