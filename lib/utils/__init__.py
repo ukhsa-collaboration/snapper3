@@ -7,6 +7,7 @@ author: ulf.schaefer@phe.gov.uk
 
 import gzip
 import logging
+import json
 
 # --------------------------------------------------------------------------------------------------
 

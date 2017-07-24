@@ -166,7 +166,11 @@ def main(args):
             if cur.rowcount != 1:
                 logging.error("Not exactly one row found in variants for sample %s and contig id %s.", args['refname'], contig_pkid)
                 return 1
-            ref_ign_pos = set(cur.fetchone()[0])
+            res = cur.fetchone()[0]
+            if res == None:
+                ref_ign_pos = set()
+            else:
+                ref_ign_pos = set(res)
 
             # remove positions ignored in the reference from the variant positions registered for this sample
             # this means two things:
