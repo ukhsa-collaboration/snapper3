@@ -13,6 +13,7 @@ import add_sample
 import cluster_sample
 import get_alignment
 import remove_sample
+import get_closest
 
 # -------------------------------------------------------------------------------------------------
 
@@ -96,6 +97,14 @@ def get_args():
                           formatter_class=RawTextHelpFormatter,
                           add_help=False)
 
+    subparsers.add_parser("get_closest",
+                          description=get_closest.get_desc(),
+                          help="Get the closest n samples from the database.",
+                          parents=[get_closest.get_args()],
+                          formatter_class=RawTextHelpFormatter,
+                          add_help=False)
+
+
     return args
 
 # -------------------------------------------------------------------------------------------------
@@ -132,6 +141,8 @@ def main():
         return get_alignment.main(args)
     elif args["cmd"] == "remove_sample":
         return remove_sample.main(args)
+    elif args["cmd"] == "get_closest":
+        return get_closest.main(args)
     return 1
 
 # -------------------------------------------------------------------------------------------------

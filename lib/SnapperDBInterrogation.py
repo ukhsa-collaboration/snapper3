@@ -1,0 +1,158 @@
+"""
+Module for accessing the SnapperDB3 database.
+
+:author: ulf.schaefer@phe.gov.uk
+:created: 25 July 2016
+"""
+
+import logging
+
+import psycopg2
+from psycopg2.extras import DictCursor
+
+
+from lib.distances import get_distances
+
+# --------------------------------------------------------------------------------------------------
+
+class SnapperDBInterrogationError(Exception):
+    pass
+
+# --------------------------------------------------------------------------------------------------
+
+class SnapperDBInterrogation(object):
+    """
+    Class to wrap a database connection to a Snapper3 db and expose
+    the required functionality.
+
+    """
+
+    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    def __init__(self, **kwargs):
+        """
+        Constructor.
+
+        Parameters:
+        -----------
+
+        """
+
+        self.connstring = None
+
+        if kwargs.has_key('conn_string'):
+            self.connstring = kwargs['conn_string']
+        elif all(kwargs.has_key(x) for x in ["host", "dbname", "user", "password"]) == True:
+            self.connstring = "host='%s' dbname='%s' user='%s' password='%s'" % \
+                              (kwargs["host"],
+                               kwargs["dbname"],
+                               kwargs["user"],
+                               kwargs["password"])
+        else:
+            raise SnapperDBInterrogationError("kwargs combination passed to constructor not valid.")
+
+    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    def _connect(self):
+        """
+        **PRIVATE**
+
+        Connect to the external database for querying.
+        """
+
+        self.conn = psycopg2.connect(self.connstring)
+        self.cur = self.conn.cursor(cursor_factory=DictCursor)
+
+    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    def _close(self):
+        """
+        **PRIVATE**
+
+        Close the connection to the external database.
+
+        There is no "commit" here because we will not be writing anything to the database.
+
+        """
+
+        if not self.cur.closed:
+            self.cur.close()
+        if self.conn.closed == 0:
+            self.conn.close()
+
+    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    def __enter__(self):
+        """
+        Enter function to use with context manager.
+        """
+
+        # open connection for use with context managers.
+        if not hasattr(self, "cur") or self.cur.closed:
+            self._connect()
+
+        return self
+
+    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    def __exit__(self, exit_type, value, traceback):
+        """
+        Exit function to use with context manager.
+        """
+
+        # Close the connection for use with context managers.
+        self._close()
+
+        return False
+
+    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    def get_closest_samples(self, sam_name, neighbours, levels=[0, 5, 10, 25, 50, 100, 250]):
+        """
+
+        Parameters
+        ----------
+
+        Returns
+        -------
+        """
+
+        sql = "SELECT s.pk_id, c.t0, c.t5, c.t10, c.t25, c.t50, c.t100, c.t250 FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND s.sample_name=%s"
+        self.cur.execute(sql,(sam_name, ))
+        if self.cur.rowcount < 1:
+            raise SnapperDBInterrogationError("No clustering information found for sample %s" % (sam_name))
+        row = self.cur.fetchone()
+        snad = [row['t0'], row['t5'], row['t10'], row['t25'], row['t50'], row['t100'], row['t250']]
+        samid = row['pk_id']
+
+        close_samples = set()
+        id2name ={}
+
+        for clu, lvl in zip(snad, levels):
+
+            t_lvl = 't%i' % (lvl)
+            sql = "SELECT s.sample_name, c.fk_sample_id FROM sample_clusters c, samples s WHERE c."+t_lvl+"=%s AND s.pk_id=c.fk_sample_id"
+            self.cur.execute(sql, (clu, ))
+            rows = self.cur.fetchall()
+            for r in rows:
+                id2name[r['fk_sample_id']] = r['sample_name']
+                if r['fk_sample_id'] != samid:
+                    close_samples.add(r['fk_sample_id'])
+
+            logging.info("Number of samples in same %s cluster: %i.", t_lvl, len(close_samples))
+
+            if len(close_samples) > neighbours:
+                break
+
+        distances = get_distances(self.cur, samid, list(close_samples))
+
+        result_samples = distances[:neighbours]
+
+        for (sa, di) in distances[neighbours:]:
+            if di == result_samples[-1][1]:
+                result_samples.append((sa, di))
+
+        result_samples = [(id2name[sa], di) for (sa, di) in result_samples]
+        return result_samples
+
+# --------------------------------------------------------------------------------------------------
