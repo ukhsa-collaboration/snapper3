@@ -11,7 +11,7 @@ import psycopg2
 from psycopg2.extras import DictCursor
 
 
-from lib.distances import get_distances
+from lib.distances import get_distances, get_relevant_distances
 
 # --------------------------------------------------------------------------------------------------
 
@@ -109,14 +109,25 @@ class SnapperDBInterrogation(object):
 
     def get_closest_samples(self, sam_name, neighbours, levels=[0, 5, 10, 25, 50, 100, 250]):
         """
+        Get the closest n samples.
 
         Parameters
         ----------
+        sam_name: str
+            name of the query sample
+        neighbours: int
+            number on neighbours
+        levels: list of int
+            default: [0, 5, 10, 25, 50, 100, 250]
+            better don't change it
 
         Returns
         -------
+        result_samples: list of tuples
+            sorted [(sample_name, distance), (sample_name, distance), (sample_name, distance), ..]
         """
 
+        # get the snp address of the query sample
         sql = "SELECT s.pk_id, c.t0, c.t5, c.t10, c.t25, c.t50, c.t100, c.t250 FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND s.sample_name=%s"
         self.cur.execute(sql,(sam_name, ))
         if self.cur.rowcount < 1:
@@ -127,7 +138,6 @@ class SnapperDBInterrogation(object):
 
         close_samples = set()
         id2name ={}
-
         for clu, lvl in zip(snad, levels):
 
             t_lvl = 't%i' % (lvl)
@@ -141,11 +151,17 @@ class SnapperDBInterrogation(object):
 
             logging.info("Number of samples in same %s cluster: %i.", t_lvl, len(close_samples))
 
-            if len(close_samples) > neighbours:
+            if len(close_samples) >= neighbours:
                 break
 
-        distances = get_distances(self.cur, samid, list(close_samples))
-
+        distances = None
+        if len(close_samples) < neighbours:
+            distances = get_relevant_distances(self.cur, samid)
+            sql = "SELECT pk_id, sample_name FROM samples"
+            self.cur.execute(sql)
+            id2name = {r['pk_id']: r['sample_name'] for r in self.cur.fetchall()}
+        else:
+            distances = get_distances(self.cur, samid, list(close_samples))
         result_samples = distances[:neighbours]
 
         for (sa, di) in distances[neighbours:]:
@@ -154,5 +170,29 @@ class SnapperDBInterrogation(object):
 
         result_samples = [(id2name[sa], di) for (sa, di) in result_samples]
         return result_samples
+
+    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    def get_samples_below_threshold(self, sam_name, dis, levels=[0, 5, 10, 25, 50, 100, 250]):
+        """
+        Get all samples that are below or equal to a given distance from the query sample.
+
+        Parameters
+        ----------
+        sam_name: str
+            query sample name
+        dis: int
+            distance threshold
+        levels: list of ints
+            default: [0, 5, 10, 25, 50, 100, 250]
+            better don't change it
+
+        Returns
+        -------
+        result_samples: list of tuples
+            sorted [(sample_name, distance), (sample_name, distance), (sample_name, distance), ..]
+        """
+
+        return None
 
 # --------------------------------------------------------------------------------------------------

@@ -14,6 +14,7 @@ import cluster_sample
 import get_alignment
 import remove_sample
 import get_closest
+import export_sample_variants
 
 # -------------------------------------------------------------------------------------------------
 
@@ -104,6 +105,12 @@ def get_args():
                           formatter_class=RawTextHelpFormatter,
                           add_help=False)
 
+    subparsers.add_parser("export_sample_variants",
+                          description=export_sample_variants.get_desc(),
+                          help="Export variants for a given sample in json format.",
+                          parents=[export_sample_variants.get_args()],
+                          formatter_class=RawTextHelpFormatter,
+                          add_help=False)
 
     return args
 
@@ -143,6 +150,8 @@ def main():
         return remove_sample.main(args)
     elif args["cmd"] == "get_closest":
         return get_closest.main(args)
+    elif args["cmd"] == "export_sample_variants":
+        return export_sample_variants.main(args)
     return 1
 
 # -------------------------------------------------------------------------------------------------

@@ -49,7 +49,7 @@ def add_reference_data(ref, all_contig_data):
 
 # --------------------------------------------------------------------------------------------------
 
-def get_data_from_db(db, samples_in):
+def get_data_from_db(db, samples_in, refname):
     """
     Get the sets of variant positions from the database for all samples and all contigs.
 
@@ -73,6 +73,15 @@ def get_data_from_db(db, samples_in):
         conn = psycopg2.connect(db)
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
+        sql  = "SELECT pk_id FROM samples WHERE sample_name=%s"
+        cur.execute(sql, (refname, ))
+        if cur.rowcount != 1:
+            logging.error("Reference name not found in database.")
+            return None
+        refid = cur.fetchone()[0]
+
+        print refid
+
         sql = "SELECT pk_id, sample_name FROM samples WHERE sample_name IN %s"
         cur.execute(sql, (tuple(samples_in), ))
         rows = cur.fetchall()
@@ -95,6 +104,18 @@ def get_data_from_db(db, samples_in):
 
             all_contig_data[con_name] = {}
 
+            # get the positions on this contig ignored in the reference (n_pos) from the db
+            sql = "SELECT n_pos FROM variants WHERE fk_sample_id=%s AND fk_contig_id=%s"
+            cur.execute(sql, (refid, con_id, ))
+            if cur.rowcount != 1:
+                logging.error("Not exactly one row found in variants for reference on contig id %s.", con_id)
+                return None
+            res = cur.fetchone()[0]
+            if res == None:
+                ref_ign_pos = set()
+            else:
+                ref_ign_pos = set(res)
+
             sql = "SELECT fk_sample_id, a_pos, c_pos, g_pos, t_pos, n_pos, gap_pos FROM variants WHERE fk_sample_id IN %s AND fk_contig_id=%s"
             cur.execute(sql, (tuple(samples.keys()), con_id, ))
             rows = cur.fetchall()
@@ -105,8 +126,9 @@ def get_data_from_db(db, samples_in):
                 all_contig_data[con_name][sam_name]['C'] = set(r['c_pos'])
                 all_contig_data[con_name][sam_name]['G'] = set(r['g_pos'])
                 all_contig_data[con_name][sam_name]['T'] = set(r['t_pos'])
-                all_contig_data[con_name][sam_name]['N'] = set(r['n_pos'])
                 all_contig_data[con_name][sam_name]['-'] = set(r['gap_pos'])
+                all_contig_data[con_name][sam_name]['N'] = set(r['n_pos'])
+                all_contig_data[con_name][sam_name]['N'].update(ref_ign_pos) # add reference ignore positions back in
 
         conn.commit()
 

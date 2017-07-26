@@ -60,6 +60,14 @@ def get_args():
                       help="""The number of neighbours to return. Additional samples that have
 the same distance as the nth sample are also returned. [DEFAULT: 1]""")
 
+    args.add_argument("--distance",
+                      "-d",
+                      type=int,
+                      default=None,
+                      dest="distance",
+                      help="""Return all samples closer or equal to this distance. [DEFAULT: None, i.e.
+return the n closest samples specified by -n option.]""")
+
     return args
 
 # --------------------------------------------------------------------------------------------------
@@ -81,7 +89,12 @@ def main(args):
     with SnapperDBInterrogation(conn_string=args['db']) as sdbi:
         try:
 
-            result = sdbi.get_closest_samples(args["sample"], args['neighbours'])
+            result = None
+            if args['distance'] == None:
+                result = sdbi.get_closest_samples(args['sample'], args['neighbours'])
+            else:
+                result = sdbi.get_samples_below_threshold(args['sample'], args['distance'])
+
             for i, x in enumerate(result):
                 print i+1, x
 

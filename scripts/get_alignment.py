@@ -74,6 +74,11 @@ def get_args():
                       required=True,
                       help="Path to reference specified (FASTA). REQUIRED.")
 
+    args.add_argument("--name-of-ref-in-db",
+                      type=str,
+                      required=True,
+                      help="The name of the reference in the database. REQUIRED.")
+
     args.add_argument("--column-Ns",
                       type=positive_float,
                       help="Keeps columns with fraction of Ns below specified threshold.")
@@ -156,7 +161,7 @@ def main(args):
     nof_samples = len(args['samples'])
     logging.info("Processing %i samples plus the reference.", nof_samples)
 
-    all_contig_data = align.get_data_from_db(args['db'], args['samples'])
+    all_contig_data = align.get_data_from_db(args['db'], args['samples'], args['name_of_ref_in_db'])
     if all_contig_data == None:
         logging.error("There was a problem getting the data from the database.")
         return 1
