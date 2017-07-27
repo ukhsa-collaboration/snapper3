@@ -216,3 +216,32 @@ def read_fasta(f):
     return d
 
 # --------------------------------------------------------------------------------------------------
+
+def get_all_cluster_members(cur, c, t):
+    """
+    Get all member of a given cluster.
+
+    Parameters
+    ----------
+    cur: obj
+        database cursor
+    c: int
+        cluster name
+    t: str
+        cluster threshold t0 or t5 or t10 or t25 ...
+
+    Returns
+    -------
+    neighbours: list
+        list of sample ids
+    """
+
+    sql = "SELECT fk_sample_id AS samid FROM sample_clusters WHERE "+t+"=%s"
+    cur.execute(sql, (c, ))
+    rows = self.cur.fetchall()
+    neighbours = []
+    for r in rows:
+        neighbours.append(r['samid'])
+    return neighbours
+
+# --------------------------------------------------------------------------------------------------
