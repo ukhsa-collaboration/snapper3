@@ -2,6 +2,7 @@ import json
 import logging
 import gzip
 import re
+import os
 from datetime import datetime
 
 import argparse
@@ -118,7 +119,7 @@ def main(args):
         return 1
 
     if args['sample_name'] == None:
-        args['sample_name'] = args['input'].split('.')[0]
+        args['sample_name'] = os.path.basename(args['input']).split('.')[0]
 
     ngs_id = None
     molis_id = None

@@ -1,7 +1,7 @@
 -- #################################################################################################
 -- array_symdiff helper
 
-DROP FUNCTION array_symdiff(anyarray, anyarray);
+DROP FUNCTION IF EXISTS array_symdiff(anyarray, anyarray);
 CREATE OR REPLACE FUNCTION public.array_symdiff(
     anyarray,
     anyarray)
@@ -21,7 +21,7 @@ $BODY$
 -- #################################################################################################
 -- get distance from one sample to a list of others by submitting variants in list format
 
-DROP FUNCTION public.get_sample_distances_by_lists(
+DROP FUNCTION IF EXISTS public.get_sample_distances_by_lists(
     IN in_a integer[],
     IN in_c integer[],
     IN in_g integer[],
@@ -48,8 +48,8 @@ CREATE OR REPLACE FUNCTION public.get_sample_distances_by_lists(
   RETURNS SETOF record AS
 $BODY$
 BEGIN
- RETURN QUERY WITH summary AS (SELECT fk_sample_id, 
-		fk_contig_id, 
+ RETURN QUERY WITH summary AS (SELECT fk_sample_id,
+		fk_contig_id,
 		a_pos,
 		c_pos,
 		g_pos,
@@ -69,13 +69,13 @@ BEGIN
 		-
 		(in_n | n_pos | gap_pos | in_gap)
 	,1) AS dist FROM variants WHERE variants.fk_contig_id=in_chr_id AND variants.fk_sample_id= ANY (in_samples))
-SELECT 
-	fk_sample_id, 
-	fk_contig_id, 
+SELECT
+	fk_sample_id,
+	fk_contig_id,
 	dist
-FROM 
+FROM
 	summary
-ORDER BY 
+ORDER BY
 	dist ASC;
 END;
 $BODY$
@@ -86,7 +86,7 @@ $BODY$
 -- #################################################################################################
 -- get distance from one sample to a list of others by submitting the sample id
 
-DROP FUNCTION public.get_sample_distances_by_id(
+DROP FUNCTION IF EXISTS public.get_sample_distances_by_id(
     IN pivot integer,
     IN in_chr_id integer,
     IN in_samples integer[],
@@ -113,8 +113,8 @@ getone AS (SELECT
 	        gap_pos AS in_gap
 	        FROM variants WHERE fk_sample_id=pivot AND fk_contig_id=in_chr_id)
 SELECT
-        fk_sample_id, 
-		fk_contig_id, 
+        fk_sample_id,
+		fk_contig_id,
 		array_length(
 		(
 			array_symdiff(in_a, a_pos)
@@ -140,7 +140,7 @@ $BODY$
 -- #################################################################################################
 -- get pairwise distance for two sample ids
 
-DROP FUNCTION public.get_pairwise_distance(
+DROP FUNCTION IF EXISTS public.get_pairwise_distance(
     IN in_chr_id integer,
     IN in_sample1 integer,
     IN in_sample2 integer,
@@ -152,7 +152,7 @@ CREATE OR REPLACE FUNCTION public.get_pairwise_distance(
     OUT integer)
   RETURNS integer AS
 $BODY$
- WITH samqryone AS 
+ WITH samqryone AS
 	(SELECT a_pos AS apo,
 	        c_pos AS cpo,
 	        g_pos AS gpo,
@@ -182,7 +182,7 @@ $BODY$
 -- #################################################################################################
 -- get distance from one sample to a list of others by submitting the sample id
 
-DROP FUNCTION public.get_all_distances_by_id(
+DROP FUNCTION IF EXISTS public.get_all_distances_by_id(
     IN pivot integer,
     IN in_chr_id integer,
     OUT integer,
@@ -207,8 +207,8 @@ getone AS (SELECT
 	        gap_pos AS in_gap
 	        FROM variants WHERE fk_sample_id=pivot AND fk_contig_id=in_chr_id)
 SELECT
-        fk_sample_id, 
-		fk_contig_id, 
+        fk_sample_id,
+		fk_contig_id,
 		array_length(
 		(
 			array_symdiff(in_a, a_pos)
@@ -227,6 +227,6 @@ END;
 $BODY$
   LANGUAGE plpgsql IMMUTABLE
   COST 100
-  ROWS 1000; 
+  ROWS 1000;
 
 -- #################################################################################################

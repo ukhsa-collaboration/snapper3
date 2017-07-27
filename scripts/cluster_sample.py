@@ -100,6 +100,7 @@ def main(args):
             return 1
 
         logging.info("Processing sample %s with id %i", args['sample_name'], sample_id)
+        logging.info("Calculating distances to all other samples now. Patience!")
 
         distances = get_relevant_distances(cur, sample_id)
         if distances == None:
@@ -147,8 +148,13 @@ def main(args):
 
         if args['with_registration'] == True:
 
+            levels = [0, 5, 10, 25, 50, 100, 250]
             for lvl in merges.keys():
                 merging.do_the_merge(cur, merges[lvl])
+                # If merging cluster a and b, the final name of the merged cluster can be either a or b.
+                # So we need to make sure the cluster gets registered into the final name of the cluster
+                # and not into the cluster that has been deleted in the merge operation.
+                new_snad[levels.index(lvl)] = merges[lvl].final_name
 
             final_snad = regis.register_sample(cur, sample_id, distances, new_snad)
 
@@ -157,6 +163,7 @@ def main(args):
                              sample_id, final_snad[6], final_snad[5], final_snad[4], final_snad[3], final_snad[2], final_snad[1], final_snad[0])
             else:
                 logging.error("Registration of sample %s in database FAILED! Database is not updated.", sample_id)
+                return 1
         else:
             logging.info("User requested sample NOT to be registered in the database.")
 
