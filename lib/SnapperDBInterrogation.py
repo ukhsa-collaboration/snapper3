@@ -12,6 +12,7 @@ from psycopg2.extras import DictCursor
 
 
 from lib.distances import get_distances, get_relevant_distances
+from lib.utils import get_closest_threshold
 
 # --------------------------------------------------------------------------------------------------
 
@@ -137,7 +138,7 @@ class SnapperDBInterrogation(object):
         samid = row['pk_id']
 
         close_samples = set()
-        id2name ={}
+        id2name = {}
         for clu, lvl in zip(snad, levels):
 
             t_lvl = 't%i' % (lvl)
@@ -193,6 +194,36 @@ class SnapperDBInterrogation(object):
             sorted [(sample_name, distance), (sample_name, distance), (sample_name, distance), ..]
         """
 
-        return None
+        # get the snp address of the query sample
+        sql = "SELECT s.pk_id, c.t0, c.t5, c.t10, c.t25, c.t50, c.t100, c.t250 FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND s.sample_name=%s"
+        self.cur.execute(sql,(sam_name, ))
+        if self.cur.rowcount < 1:
+            raise SnapperDBInterrogationError("No clustering information found for sample %s" % (sam_name))
+        row = self.cur.fetchone()
+        snad = [row['t0'], row['t5'], row['t10'], row['t25'], row['t50'], row['t100'], row['t250']]
+        samid = row['pk_id']
+
+        ct = get_closest_threshold(dis)
+        t_ct = 't%i' % (ct)
+        cluster = snad[levels.index(ct)]
+
+        id2name = {}
+        sql = "SELECT s.sample_name AS samname, c.fk_sample_id AS samid FROM sample_clusters c, samples s WHERE c."+t_ct+"=%s AND s.pk_id=c.fk_sample_id"
+        self.cur.execute(sql, (cluster, ))
+        rows = self.cur.fetchall()
+        neighbours = []
+        for r in rows:
+            id2name[r['samid']] = r['samname']
+            if r['samid'] != samid:
+                neighbours.append(r['samid'])
+
+        if len(neighbours) <= 0:
+            logging.info("No samples found this close to the query sample.")
+            return []
+        else:
+            logging.info("Calculating distances to %i samples in the same %s cluster %s.", len(neighbours), t_ct, cluster)
+            distances = get_distances(self.cur, samid, neighbours)
+            result_samples = [(id2name[s], d) for (s, d) in distances if d <= dis]
+            return result_samples
 
 # --------------------------------------------------------------------------------------------------
