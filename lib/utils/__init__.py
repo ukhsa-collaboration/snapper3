@@ -238,7 +238,7 @@ def get_all_cluster_members(cur, c, t):
 
     sql = "SELECT fk_sample_id AS samid FROM sample_clusters WHERE "+t+"=%s"
     cur.execute(sql, (c, ))
-    rows = self.cur.fetchall()
+    rows = cur.fetchall()
     neighbours = []
     for r in rows:
         neighbours.append(r['samid'])

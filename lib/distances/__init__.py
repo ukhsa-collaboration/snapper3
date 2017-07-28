@@ -30,8 +30,6 @@ def get_all_pw_dists(cur, samids):
     None if there is a problem
     """
 
-    print "samids", samids
-
     # get list of contig ids from database
     sql = "SELECT pk_id FROM contigs"
     cur.execute(sql)
