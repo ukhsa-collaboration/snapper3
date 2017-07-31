@@ -103,6 +103,7 @@ def main(args):
         row = cur.fetchone()
 
         sample_id = row['pk_id']
+        # get status of ignore flags
         igno_flag = row['ignore_sample']
         zscr_flag = row['ignore_zscore']
 
@@ -126,11 +127,21 @@ def main(args):
         row = cur.fetchone()
         snad = [row['t0'], row['t5'], row['t10'], row['t25'], row['t50'], row['t100'], row['t250']]
 
+        # 'global' container to keep distances to prevent repeated calculation of same distance
+        # always keep distances[a][b] = d and distances[b][a] = d both
         distances = {}
 
+        logging.info("Checking if any clusters need splitting after sample removal.")
         splits = check_cluster_integrity(cur, sample_id, snad, distances)
-        print "splits", splits
+        logging.info("Clusters that need splitting after sample removal: %s", splits)
 
+        # splits structure
+        # splits[level] = [(c, a, b), ...] <- a abnd b are samples that are no longer connected the cluster
+        # c after the removee has been removed
+        # splits[level] = None <- at this level the cluster is file
+
+        # if the sample was previously included in the stats or there are any splits on any level
+        # we need to (do the splitting and) update the stats
         if zscr_flag == False or any([x != None for x in splits.values()]):
             # get all 250 members and calculate distances to them
             sql = "SELECT c.fk_sample_id AS samid FROM sample_clusters c, samples s WHERE c.t250=%s AND c.fk_sample_id=s.pk_id AND s.ignore_zscore IS FALSE"
@@ -144,6 +155,7 @@ def main(args):
 
             logging.info("Calculating %i distances to update stats.", len(t250_members))
             # get the distances and remember them in the dict
+            # we need them anyway, so we store them in the dict
             _ = get_distances_from_memory(cur, distances, sample_id, t250_members)
 
             # update all stats in all clusters on all levels
@@ -245,6 +257,9 @@ def update_cluster_stats_post_removal(cur, sid, clu, lvl, distances, split, zscr
     None if fail
     """
 
+    # Yes, in case this is a zscore_ignore sample and there is a split to be done, but not on this level,
+    # this method will take stuff out of the database, do nothing to them and put them back in. I know.
+
     t_lvl = "t%i" % (lvl)
 
     logging.info("Updating stats for cluster %s on level %s.", clu, t_lvl)
@@ -277,43 +292,58 @@ def update_cluster_stats_post_removal(cur, sid, clu, lvl, distances, split, zscr
         logging.error("Bizzare data inconsistency for sample id %s and %s cluster %s.", sid, t_lvl, clu)
         return None
 
+    # if the was previously ignore do not remove it from stats object, because it was never considered when calculating the stats
     if zscr_flag == False:
         # get all distances from the sample to be removed to all other members of the cluster
         # and update the stats object with this information
         this_di = [distances[sid][m] for m in members]
         assert oStats.members == (len(this_di) + 1)
         oStats.remove_member(this_di)
+        # remember which members have been removed from the stats object
         removed_members = [sid]
     else:
         removed_members = []
 
+    # if tere is a split on this level
     if split != None:
         logging.info("Cluster %s need to be split.", clu)
         groups = split_clusters(cur, sid, split, lvl, distances)
-        print "groups", groups
+        logging.debug("It will be split into these subclusters: ", groups)
 
+        # groups[a] = [1,2,3]
+        # groups[b] = [4,5,6]
+
+        # put the largest subcluster at the front of the list of subclusters
         group_lists = sorted(groups.values(), key=len, reverse=True)
+        # for the largest group
         for grli in group_lists[1:]:
+            # for all members of this group
             for m in grli:
+                # remove from members, from stats object and remember that you removed it in that list
                 members.remove(m)
                 this_di = [d for (s, d) in get_distances_from_memory(cur, distances, m, members)]
                 assert oStats.members == (len(this_di) + 1)
+                # i.e. turn the oStats object into the stats object for the largest cluster after the split
                 oStats.remove_member(this_di)
                 removed_members.append(m)
 
+        # for the other subclustrs
         for grli in group_lists[1:]:
+            # make a new stats object based on the list of members and all pw distances between them
             all_pw_grdi = get_all_pw_dists(cur, grli)
             oStatsTwo = ClusterStats(members=len(grli), dists=all_pw_grdi)
             sql = "SELECT max("+t_lvl+") AS m FROM sample_clusters"
             cur.execute(sql)
             row = cur.fetchone()
-            new_clu_name= row['m'] + 1
+            new_clu_name = row['m'] + 1
             sql = "INSERT INTO cluster_stats (cluster_level, cluster_name, nof_members, nof_pairwise_dists, mean_pwise_dist, stddev) VALUES (%s, %s, %s, %s, %s, %s)"
             cur.execute(sql, (t_lvl, new_clu_name, oStatsTwo.members, oStatsTwo.nof_pw_dists, oStatsTwo.mean_pw_dist, oStatsTwo.stddev_pw_dist, ))
-
+            # put all members of this subcluster in the new cluster in the database
             sql = "UPDATE sample_clusters SET "+t_lvl+"=%s WHERE fk_sample_id IN %s"
             cur.execute(sql, (new_clu_name, tuple(grli), ))
 
+            # calculate the mean distance to all other members from scratch for all members of this newly
+            # created subcluster and update in the database
             for nm in grli:
                 targets = [x for x in grli if x != nm]
                 alldis = get_distances_from_memory(cur, distances, nm, targets)
@@ -342,6 +372,10 @@ def update_cluster_stats_post_removal(cur, sid, clu, lvl, distances, split, zscr
         n_mean = p_mean
 
         # update this mean by removing one distance and update the database table
+        # if there was not split removed_members will have only one member in it
+        # else there are more
+        # If there was no split on this level and the samples was previously ignored,
+        # it will be empty
         for remomem in removed_members:
             x = get_distances_from_memory(cur, distances, mem, [remomem])[0][1]
             try:
@@ -433,7 +467,7 @@ def check_cluster_integrity(cur, sample_id, snad, distances, levels=[0, 5, 10, 2
                 connected_mems.append(sa)
             remember_distance(distances, sample_id, sa, di)
 
-        print "connected_mems", connected_mems
+        logging.debug("Samples connected via removee: %s", connected_mems)
 
         # investigate all pw distances between connected members
         potentially_broken_pairs = []
@@ -446,6 +480,9 @@ def check_cluster_integrity(cur, sample_id, snad, distances, levels=[0, 5, 10, 2
                     except KeyError:
                         pwd = get_all_pw_dists(cur, [a, b])[0]
                         remember_distance(distances, a, b, pwd)
+                    # if pw distance between the two sampes is bigger than the threshold,
+                    # the link between the samples might be broken, unless there is another samples
+                    # (or chain of samples) connecting them
                     if pwd > lvl:
                         potentially_broken_pairs.append((a, b))
 
@@ -454,40 +491,52 @@ def check_cluster_integrity(cur, sample_id, snad, distances, levels=[0, 5, 10, 2
             splits[lvl] = None
             continue
 
-        print "potentially_broken_pairs", potentially_broken_pairs
+        logging.debug("Samples potentially no longer connected via removee: %s",
+                      potentially_broken_pairs)
 
         # check if there is another path to get from a to b with only steps <= t
         for a, b in potentially_broken_pairs:
             broken = False
-            print "a, b", a, b
+            logging.debug("Checking if there is another way to connect %s and %s.", a, b)
             # list of samples connectable to a (directly or over multiple nodes)
             rel_conn_sams_to_a = [a]
             idx = 0
+            # when b in connected the a w're done
             while b not in rel_conn_sams_to_a:
                 # pivot is the one currently investigated
                 pivot = rel_conn_sams_to_a[idx]
-                print "pivot", pivot
+                # get all the members of the current cluster except the pivot
                 all_mems_but_pivot = [x for x in mems if x != pivot]
+                # get all the distances from the pivot to thpse members
                 d = get_distances_from_memory(cur,
                                               distances,
                                               pivot,
                                               all_mems_but_pivot)
                 # all new samples that are connectable to the pivot
-                rel_conn_to_pivot = [sa for (sa, di) in d if (di <= lvl) and (sa not in rel_conn_sams_to_a)]
+                # two conditions: a) the sample is connected to the pivot with d<=t
+                #         b) we don't have this sample yet in the ones we already know are connected to a
+                rel_conn_to_pivot = [sa for (sa, di) in d
+                                     if (di <= lvl) and
+                                     (sa not in rel_conn_sams_to_a)]
                 # there are no new samples connected to the pivot and the last sample has been considered
+                # but b is not yet foud to be connected => cluster is broken
                 if len(rel_conn_to_pivot) == 0 and pivot == rel_conn_sams_to_a[-1]:
                     broken = True
                     break
                 else:
+                    # otehr wise add any potential new ones to the list and check the next one
                     rel_conn_sams_to_a += rel_conn_to_pivot
                     idx += 1
+            # we need to remember what was broken for updating later
             if broken == True:
                 try:
                     splits[lvl].append((clu, a, b))
                 except KeyError:
                     splits[lvl] = [(clu, a, b)]
-                # go to next broken pair
+                # go to next broken pair, there might be more than one and
+                # we want to know for updating later
 
+        # we checked all pairs and always found b somehow, cluster is fine
         if broken == False:
             splits[lvl] = None
 
@@ -573,15 +622,23 @@ def remember_distance(distances, a, b, d):
 
 def expand_from_node(cur, a, c, lvl, distances, sample_id=None):
     """
+    From a seed samples a, get all samples that can be connect with <=lvl over multiple nodes.
 
     Parameters
     ----------
     cur: obj
         database cursor
-
-
+    a: int
+        seed samples id
     c: int
         cluster name
+    lvl: int
+        cluster level
+    distances: dict
+        distances[a][b] = d
+        distances[b][a] = d
+    sample_id: int
+        (optional)  sample to remove from cluster
 
     Returns
     -------
