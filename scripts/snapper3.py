@@ -10,6 +10,7 @@ import logging
 import os
 
 import add_sample
+import add_reference
 import cluster_sample
 import get_alignment
 import remove_sample
@@ -76,6 +77,14 @@ def get_args():
                           parents=[add_sample.get_args()],
                           formatter_class=RawTextHelpFormatter,
                           add_help=False)
+
+    subparsers.add_parser("add_reference",
+                          description=add_reference.get_desc(),
+                          help="Add the reference to an empty database.",
+                          parents=[add_reference.get_args()],
+                          formatter_class=RawTextHelpFormatter,
+                          add_help=False)
+
 
     subparsers.add_parser("cluster_sample",
                           description=cluster_sample.get_desc(),
@@ -152,6 +161,8 @@ def main():
         return get_closest.main(args)
     elif args["cmd"] == "export_sample_variants":
         return export_sample_variants.main(args)
+    elif args["cmd"] == "add_reference":
+        return add_reference.main(args)
     return 1
 
 # -------------------------------------------------------------------------------------------------
