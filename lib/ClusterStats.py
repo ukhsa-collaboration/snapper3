@@ -129,25 +129,32 @@ class ClusterStats(object):
 
         assert len(dists) == self.members - 1
 
-        for di in dists:
-            # remember the mean before updating
-            prev_m = self.mean_pw_dist
+        if self.members == 2:
+            self.nof_pw_dists = 0
+            self.mean_pw_dist = None
+            self.stddev_pw_dist = None
+            self.variance_pw_dist = None
+            self.members = 1
+        else:
+            for di in dists:
+                # remember the mean before updating
+                prev_m = self.mean_pw_dist
 
-            # proxy for the sum of all pw dists
-            sm = self.mean_pw_dist * float(self.nof_pw_dists)
-            # take away one dist from the sum
-            new_sum = sm - di
-            # we have one fewer dist at this point
-            self.nof_pw_dists -= 1
-            # new mean is new_sum over new nof dists
-            self.mean_pw_dist = new_sum / self.nof_pw_dists
+                # proxy for the sum of all pw dists
+                sm = self.mean_pw_dist * float(self.nof_pw_dists)
+                # take away one dist from the sum
+                new_sum = sm - di
+                # we have one fewer dist at this point
+                self.nof_pw_dists -= 1
+                # new mean is new_sum over new nof dists
+                self.mean_pw_dist = new_sum / self.nof_pw_dists
 
-            # update the variance
-            N = self.nof_pw_dists
-            a = (N + 1) * (self.variance_pw_dist)
-            b = (di - self.mean_pw_dist) * (di - prev_m)
-            self.variance_pw_dist = (a - b) / N
-            self.stddev_pw_dist = math.sqrt(self.variance_pw_dist)
+                # update the variance
+                N = self.nof_pw_dists
+                a = (N + 1) * (self.variance_pw_dist)
+                b = (di - self.mean_pw_dist) * (di - prev_m)
+                self.variance_pw_dist = (a - b) / N
+                self.stddev_pw_dist = math.sqrt(self.variance_pw_dist)
 
         self.members -= 1
 
