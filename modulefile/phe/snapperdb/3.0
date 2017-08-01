@@ -1,0 +1,32 @@
+#%Module1.0#####################################################################
+##
+## modules modulefile
+##
+## modulefiles/modules.  Generated from modules.in by configure.
+##
+
+# for Tcl script use only
+set    name            snapperdb
+set    version         3.0
+set    modroot         /home/ulf/project/${name}/${version}
+
+proc ModulesHelp { } {
+        global name version modroot
+
+        puts stderr "\t$name - loads the $name software & application environment"
+        puts stderr "\n\tThis adds $modroot/* to several of the"
+        puts stderr "\tenvironment variables."
+        puts stderr "\n\tVersion $version\n"
+}
+
+module-whatis "loads the $name environment"
+
+prepend-path PATH           $modroot/scripts
+prepend-path PYTHONPATH           $modroot
+
+
+
+module load python/2.7.6
+module load psycopg2/python2.7.6/2.5.2
+
+conflict    phe/snapperdb

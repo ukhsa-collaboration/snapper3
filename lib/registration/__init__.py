@@ -48,6 +48,9 @@ def register_sample(cur, sample_id, distances, new_snad, levels=[0, 5, 10, 25, 5
             row = cur.fetchone()
             final_snad[lvl] = row['m'] + 1
             means[lvl] = None
+            # create a new entry in cluster stats
+            sql = "INSERT INTO cluster_stats (cluster_level, cluster_name, nof_members, nof_pairwise_dists) VALUES (%s, %s, 1, 0)"
+            cur.execute(sql, (t_lvl, final_snad[lvl], ))
         else:
             # get current cluster stats
             sql = "SELECT nof_members, mean_pwise_dist, stddev FROM cluster_stats WHERE cluster_name=%s AND cluster_level=%s"

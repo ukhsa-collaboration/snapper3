@@ -151,8 +151,8 @@ def main(args):
             ref_ign_pos = set(condata['N']).union(set(condata['-']))
 
             # make one entry per contig in the variants table
-            sql = "INSERT INTO variants (fk_sample_id, fk_contig_id, n_pos) VALUES (%s, %s, %s)"
-            cur.execute(sql, (ref_pkid, contig_pkid, list(ref_ign_pos), ))
+            sql = "INSERT INTO variants (fk_sample_id, fk_contig_id, n_pos, a_pos, c_pos, g_pos, t_pos, gap_pos) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
+            cur.execute(sql, (ref_pkid, contig_pkid, list(ref_ign_pos), [], [], [], [], [], ))
 
             logging.info("Inserted for contig %s : Ns: %s",
                          contig_pkid,
@@ -165,7 +165,7 @@ def main(args):
         # and these are the stats for these clusters
         for t_lvl in ["t0", "t5", "t10", "t25", "t50", "t100", "t250"]:
             sql = "INSERT INTO cluster_stats (cluster_level, cluster_name, nof_members, nof_pairwise_dists) VALUES (%s, 1, 1, 0)"
-            cur.execute(sql , (t_lvl, ))
+            cur.execute(sql, (t_lvl, ))
 
         conn.commit()
 
