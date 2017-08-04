@@ -211,6 +211,10 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
             logging.info("All distances in cluster %s on level %s are 0. Skipping zscore check.", clu, t_lvl)
             continue
 
+        if oStats.stddev_pw_dist <= 0.0:
+            logging.info("All distances in cluster %s on level %s are identical. Skipping zscore check.", clu, t_lvl)
+            continue
+
         # calculate zscore
         mean_all_dist_in_c = oStats.mean_pw_dist
         zscr = (avg_dis - mean_all_dist_in_c) / oStats.stddev_pw_dist
