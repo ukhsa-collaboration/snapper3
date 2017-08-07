@@ -80,8 +80,6 @@ def get_data_from_db(db, samples_in, refname):
             return None
         refid = cur.fetchone()[0]
 
-        print refid
-
         sql = "SELECT pk_id, sample_name FROM samples WHERE sample_name IN %s"
         cur.execute(sql, (tuple(samples_in), ))
         rows = cur.fetchall()
@@ -366,5 +364,47 @@ def output_per_sample_stats(all_contig_data):
         sys.stdout.write("%s\tN: %i, mut: %i, mix: %i, gap: %i, total: %i\n" %(sam, ns, mut, mix, gaps, tot))
 
     return 0
+
+# --------------------------------------------------------------------------------------------------
+def get_snp_addresses(db, samples):
+    """
+    Get the snp addresses for the samples.
+
+    Parameters:
+    -----------
+    db: str
+        connection string
+    samples: list
+        list of sample names
+
+    Returns:
+    --------
+    snads: dict
+        snads[sample_name] = '1.2.3.4.5.6.7'
+    """
+
+    snads = {}
+
+    try:
+        # open db
+        conn = psycopg2.connect(db)
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        sql = "SELECT s.sample_name, c.t0, c.t5, c.t10, c.t25, c.t50, c.t100, c.t250 FROM samples s, sample_clusters c WHERE c.fk_sample_id=s.pk_id AND s.sample_name IN %s"
+        cur.execute(sql, (tuple(samples), ))
+        rows = cur.fetchall()
+        for r in rows:
+            snads[r['sample_name']] = "%i.%i.%i.%i.%i.%i.%i" \
+                          % (r['t250'], r['t100'], r['t50'], r['t25'], r['t10'], r['t5'], r['t0'])
+
+    except psycopg2.Error as e:
+         logging.error("Database reported error: %s" % (str(e)))
+         return None
+    finally:
+        # close all dbs
+        cur.close()
+        conn.close()
+
+    return snads
 
 # --------------------------------------------------------------------------------------------------

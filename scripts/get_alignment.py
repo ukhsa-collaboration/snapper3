@@ -97,6 +97,9 @@ def get_args():
                       type=float,
                       help="When using 'auto' option for --sample-gaps or --sample-Ns, remove sample that have" + \
                            "gaps or Ns this many times above the stddev of all samples. [Default: 2.0]")
+    args.add_argument("--snp-address",
+                      action='store_true',
+                      help="Annotate fasta sample header with SNP address where available. [Default: don't]")
 
     group_b = args.add_mutually_exclusive_group()
     group_b.add_argument("--remove-invariant-npos",
@@ -165,6 +168,13 @@ def main(args):
     if all_contig_data == None:
         logging.error("There was a problem getting the data from the database.")
         return 1
+
+    dSnads = None
+    if args['snp_address'] == True:
+        dSnads = align.get_snp_addresses(args['db'], args['samples'])
+        if dSnads == None:
+            logging.error("There was a problem getting the snp addresses from the database.")
+            return 1
 
     if align.add_reference_data(args['reference'], all_contig_data) == None:
         logging.error("There was a problem adding reference data to the data structure.")
@@ -317,7 +327,10 @@ def main(args):
     with open(args["out"], "w") as fp:
         # write seqs to file
         for name, seq in dSeqs.iteritems():
-            fp.write(">%s\n%s\n" % (name, seq))
+            if dSnads != None and dSnads.has_key(name):
+                fp.write(">%s %s\n%s\n" % (name, dSnads[name], seq))
+            else:
+                fp.write(">%s\n%s\n" % (name, seq))
 
     return 0
 
