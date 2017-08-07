@@ -259,7 +259,7 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
             mess = "z-score of sample %s to cluster %s on level %s incl new member: %s" % (c_mem, clu, t_lvl, zscr)
             logging.debug(mess)
 
-            if zscr <= -0.7:
+            if zscr <= -1.0:
                 fail = True
                 info.append(mess)
 
