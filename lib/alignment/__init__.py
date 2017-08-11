@@ -408,3 +408,43 @@ def get_snp_addresses(db, samples):
     return snads
 
 # --------------------------------------------------------------------------------------------------
+
+def get_all_names(db, name_of_ref_in_db):
+    """
+    GHet the names of all samples in the db other than the reference.
+
+    Parameters:
+    -----------
+    db: str
+        connection string
+    name_of_ref_in_db: str
+        the name of the reference in the database
+
+    Returns:
+    --------
+    names: list
+        ['john, 'paul', 'george', 'ringo']
+    """
+
+    names = []
+
+    try:
+        # open db
+        conn = psycopg2.connect(db)
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        sql = "SELECT sample_name FROM samples WHERE sample_name!=%s"
+        cur.execute(sql, (name_of_ref_in_db, ))
+        names = [r['sample_name'] for r in cur.fetchall()]
+
+    except psycopg2.Error as e:
+         logging.error("Database reported error: %s" % (str(e)))
+         return None
+    finally:
+        # close all dbs
+        cur.close()
+        conn.close()
+
+    return names
+
+# --------------------------------------------------------------------------------------------------

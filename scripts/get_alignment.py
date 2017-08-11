@@ -161,6 +161,9 @@ def main(args):
     args["reference"] = ref_seq
     args['reflength'] = sum([len(x) for x in ref_seq.values()])
 
+    if args['samples'] == ['all']:
+        args['samples'] = align.get_all_names(args['db'], args['name_of_ref_in_db'])
+
     nof_samples = len(args['samples'])
     logging.info("Processing %i samples plus the reference.", nof_samples)
 
