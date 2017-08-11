@@ -79,7 +79,7 @@ def register_sample(cur, sample_id, distances, new_snad, levels=[0, 5, 10, 25, 5
             oStats.add_member(dis_to_cu_mems)
 
             # update cluster stats table
-            logging.debug("Updating stats: %s", str(oStats))
+            logging.debug("Updating stats for cluster %i on level %s: %s", cluster, t_lvl, str(oStats))
             sql  = "UPDATE cluster_stats SET (nof_members, nof_pairwise_dists, mean_pwise_dist, stddev) = (%s, %s, %s, %s) WHERE cluster_name=%s AND cluster_level=%s"
             cur.execute(sql, (oStats.members, oStats.nof_pw_dists, oStats.mean_pw_dist, oStats.stddev_pw_dist, cluster, t_lvl, ))
 
