@@ -6,9 +6,9 @@
 ##
 
 # for Tcl script use only
-set    name            snapperdb
-set    version         3.0
-set    modroot         /home/ulf/project/${name}/${version}
+set    name            snapper3
+set    version         3-0
+set    modroot         /home/ulf/project/snapperdb/${version}
 
 proc ModulesHelp { } {
         global name version modroot
