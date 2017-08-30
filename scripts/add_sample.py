@@ -93,6 +93,18 @@ def get_args():
                       help="""Path to reference for this sample. Must be the same as used for the database.
 REQUIRED when format is fasta, else ignored.""")
 
+    args.add_argument("--min-coverage",
+                      type=float,
+                      metavar="FLOAT",
+                      default=None,
+                      dest="mcov",
+                      help="""Minimum coverage required to aloow sample in database. Only applicable with json
+format, ignored for fasta.  This will check for the coverageMetaData annotation calculated by Phenix
+and only allow the sample in, if the mean coverage is >= this value.
+[default: do not check this]""")
+
+
+
     return args
 
 # --------------------------------------------------------------------------------------------------
@@ -110,13 +122,24 @@ def main(args):
     '''
 
     if args['format'] == 'fasta' and args['reference'] == None:
-        logging.error("--reference optrion is REQUIRED when using fasta format input.")
+        logging.error("--reference option is REQUIRED when using fasta format input.")
         return 1
 
     data = get_the_data_from_the_input(args)
+
     if data == None:
         logging.error("An error occured getting the data from the input.")
         return 1
+
+    if args['format'] == 'json' and args['mcov'] != None:
+        if data['annotations'].has_key('coverageMetaData') == False:
+            logging.error("Was asked to check coverage but no coverage annotation found in json file.")
+            return 1
+        cov_info = dict(item.split("=") for item in data['annotations']['coverageMetaData'].split(","))
+        logging.info("The mean coverage for this sample is: %s", cov_info['mean'])
+        if float(cov_info['mean']) < args['mcov']:
+            logging.error("The mean coverage for this sample is below the user specified threshold.")
+            return 1
 
     if args['sample_name'] == None:
         args['sample_name'] = os.path.basename(args['input']).split('.')[0]
