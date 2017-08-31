@@ -270,3 +270,37 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
     return fail, info
 
 # --------------------------------------------------------------------------------------------------
+
+def check_duplicate_clustering(cur, sample_id):
+    """
+    Check whether the sample was already clustered by looking in the
+    sample_clusters table. It's bad to sample clusters twice.
+
+    Parameters
+    ----------
+    cur: obj
+        database cursor
+    sample_id: int
+        pk_id in samples table
+
+    Returns
+    -------
+    rc: int
+        0 if not clustered yet, else <0
+    snad: str
+        snp address if clustered already, else None
+
+    """
+
+    sql = "SELECT t250, t100, t50, t25, t10, t5, t0 FROM sample_clusters WHERE fk_sample_id=%s"
+    cur.execute(sql, (sample_id, ))
+    if cur.rowcount == 0:
+        rc = 0
+        snad = None
+    else:
+        rc = -1
+        snad = '-'.join([str(x) for x in cur.fetchone()])
+
+    return rc, snad
+
+# --------------------------------------------------------------------------------------------------

@@ -99,6 +99,14 @@ def main(args):
             logging.error("Could not get sample id from db. :-(")
             return 1
 
+        rc, snadd = sndb.check_duplicate_clustering(cur, sample_id)
+        if rc != 0:
+            logging.error("Sample %s with sample id %s was already clustered with snp address: %s",
+                          args['sample_name'],
+                          sample_id,
+                          snadd)
+            return 1
+
         logging.info("Processing sample %s with id %i", args['sample_name'], sample_id)
         logging.info("Calculating distances to all other samples now. Patience!")
 
