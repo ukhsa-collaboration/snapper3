@@ -167,8 +167,22 @@ def main(args):
             final_snad = regis.register_sample(cur, sample_id, distances, new_snad)
 
             if final_snad != None:
-                logging.info("Sample with sample_id %s was registered in the database with SNP address: %s-%s-%s-%s-%s-%s-%s",
-                             sample_id, final_snad[6], final_snad[5], final_snad[4], final_snad[3], final_snad[2], final_snad[1], final_snad[0])
+                logging.info("Sample %s with sample_id %s was registered in the database with SNP address: %s-%s-%s-%s-%s-%s-%s",
+                             args['sample_name'],
+                             sample_id,
+                             final_snad[6],
+                             final_snad[5],
+                             final_snad[4],
+                             final_snad[3],
+                             final_snad[2],
+                             final_snad[1],
+                             final_snad[0])
+
+                # if we did not do zscore checks, because the sample would fail, we need to ignore it in the future
+                if args['no_zscore_check'] == True:
+                    sql = "UPDATE samples SET ignore_zscore=TRUE WHERE pk_id=%s"
+                    cur.execute(sql, (sample_id, ))
+
             else:
                 logging.error("Registration of sample %s in database FAILED! Database is not updated.", sample_id)
                 return 1
