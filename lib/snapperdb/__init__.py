@@ -169,6 +169,7 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
         sql = "SELECT nof_members, nof_pairwise_dists, mean_pwise_dist, stddev FROM cluster_stats WHERE cluster_level=%s AND cluster_name=%s"
         cur.execute(sql, (t_lvl, clu, ))
         if cur.rowcount != 1:
+            logging.error("Not exactly one stats entry found for cluster_level %s and cluster_name %s", t_lvl, clu)
             return None, None
         row = cur.fetchone()
         nof_mems = row['nof_members']
@@ -222,7 +223,7 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
         mess = "z-score of new sample to cluster %s on level %s: %s" % (clu, t_lvl, zscr)
         logging.debug(mess)
 
-        if zscr <= -1.75:
+        if zscr <= -1.5:
             fail = True
             info.append(mess)
 
@@ -243,6 +244,7 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
                 sql = "SELECT "+t_lvl+"_mean FROM sample_clusters WHERE fk_sample_id=%s"
                 cur.execute(sql, (c_mem, ))
                 if cur.rowcount != 1:
+                    logging.error("Not exactly one %s_mean in sample clusters for sample id %s", t_lvl, c_mem)
                     return None, None
                 row = cur.fetchone()
                 old_medis = row[t_lvl + '_mean']
@@ -259,7 +261,7 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
             mess = "z-score of sample %s to cluster %s on level %s incl new member: %s" % (c_mem, clu, t_lvl, zscr)
             logging.debug(mess)
 
-            if zscr <= -1.0:
+            if zscr <= -1.5:
                 fail = True
                 info.append(mess)
 
