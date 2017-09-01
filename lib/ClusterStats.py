@@ -56,16 +56,15 @@ class ClusterStats(object):
                 self.variance_pw_dist = sum(x)/len(x)
                 self.stddev_pw_dist = math.sqrt(self.variance_pw_dist)
             else:
-                # this is for one member only clusters
-                self.mean_pw_dist = None
-                self.variance_pw_dist = None
-                self.stddev_pw_dist = None
+                # this is for one member or 0 member clusters only clusters
+                pass
 
         elif kwargs.has_key('stddev') and kwargs.has_key('mean'):
             self.nof_pw_dists = (self.members * (self.members-1))/2.0
-            self.mean_pw_dist = float(kwargs['mean'])
-            self.stddev_pw_dist = float(kwargs['stddev'])
-            self.variance_pw_dist = self.stddev_pw_dist**2.0
+            if self.members > 0:
+                self.mean_pw_dist = float(kwargs['mean'])
+                self.stddev_pw_dist = float(kwargs['stddev'])
+                self.variance_pw_dist = self.stddev_pw_dist**2.0
         else:
             raise ClusterStatsError("kwargs combination passed to constructor not valid.")
 
@@ -112,11 +111,17 @@ class ClusterStats(object):
                 b = (nd - self.mean_pw_dist) * (nd - prev_m)
                 self.variance_pw_dist = (a + b) / N
                 self.stddev_pw_dist = math.sqrt(self.variance_pw_dist)
-        else:
+        elif self.members == 1:
             self.nof_pw_dists = 1
             self.mean_pw_dist = float(new_dists[0])
             self.stddev_pw_dist = 0.0
             self.variance_pw_dist = 0.0
+        else:
+            # self.members is 0
+            self.nof_pw_dists = 0
+            self.mean_pw_dist = None
+            self.stddev_pw_dist = None
+            self.variance_pw_dist = None
 
         self.members += 1
 
@@ -129,17 +134,15 @@ class ClusterStats(object):
 
         assert len(dists) == self.members - 1
 
-        if self.members == 2:
+        if self.members <= 2:
             self.nof_pw_dists = 0
             self.mean_pw_dist = None
             self.stddev_pw_dist = None
             self.variance_pw_dist = None
-            self.members = 1
         else:
             for di in dists:
                 # remember the mean before updating
                 prev_m = self.mean_pw_dist
-
                 # proxy for the sum of all pw dists
                 sm = self.mean_pw_dist * float(self.nof_pw_dists)
                 # take away one dist from the sum
@@ -153,7 +156,13 @@ class ClusterStats(object):
                 N = self.nof_pw_dists
                 a = (N + 1) * (self.variance_pw_dist)
                 b = (di - self.mean_pw_dist) * (di - prev_m)
-                self.variance_pw_dist = (a - b) / N
+
+                # any better idea of sorting out rounding errors?
+                if round(a, 10) == round(b, 10):
+                    self.variance_pw_dist = 0.0
+                else:
+                    self.variance_pw_dist = (a - b) / N
+
                 self.stddev_pw_dist = math.sqrt(self.variance_pw_dist)
 
         self.members -= 1
