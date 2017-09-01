@@ -164,7 +164,7 @@ def main(args):
                 # and not into the cluster that has been deleted in the merge operation.
                 new_snad[levels.index(lvl)] = merges[lvl].final_name
 
-            final_snad = regis.register_sample(cur, sample_id, distances, new_snad)
+            final_snad = regis.register_sample(cur, sample_id, distances, new_snad, args['no_zscore_check'])
 
             if final_snad != None:
                 logging.info("Sample %s with sample_id %s was registered in the database with SNP address: %s-%s-%s-%s-%s-%s-%s",
