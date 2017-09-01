@@ -132,7 +132,7 @@ def get_stats_for_merge(cur, oMerge):
         # make a flat list out of the values in members which are lists
         current_mems = [item for sublist in members.values() for item in sublist]
 
-        all_pw_dists = get_all_pw_dists(cur, samids)
+        all_pw_dists = get_all_pw_dists(cur, current_mems)
         oMerge.stats = ClusterStats(members=len(current_mems), dists=all_pw_dists)
 
     oMerge.final_members = current_mems
