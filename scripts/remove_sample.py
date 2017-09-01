@@ -121,9 +121,21 @@ def main(args):
         # get the snp address
         sql = "SELECT t0, t5, t10, t25, t50, t100, t250 FROM sample_clusters WHERE fk_sample_id=%s"
         cur.execute(sql, (sample_id, ))
-        if cur.rowcount != 1:
+        if cur.rowcount > 1:
             logging.error("There is not exactly one entry in sample clusters for this samples. :-(")
             return 1
+        elif cur.rowcount == 0:
+            logging.info("Sample has never been clustered.")
+            if args['just_ignore'] == True:
+                sql = "UPDATE samples SET ignore_sample=True WHERE pk_id=%s"
+                cur.execute(sql, (sample_id, ))
+                logging.info("Sample is now ignored.")
+                return 0
+            else:
+                drop_sample(cur, sample_id)
+                conn.commit()
+                return 0
+
         row = cur.fetchone()
         snad = [row['t0'], row['t5'], row['t10'], row['t25'], row['t50'], row['t100'], row['t250']]
 
