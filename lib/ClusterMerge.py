@@ -29,6 +29,7 @@ class ClusterMerge(object):
         self.level = int(kwargs['level'])
         self.t_level = 't%i' % self.level
         self.org_clusters = kwargs['clusters']
+        self.org_sizes = kwargs['sizes']
         self.final_name = None
         self.final_members = None
         self.stats = None
@@ -40,9 +41,10 @@ class ClusterMerge(object):
         '''
         overwrite __str__() to tell it how to print itself
         '''
-        return "level: %s, clusters: %s, final name: %s, nof final members: %s" \
+        return "level: %s, clusters: %s, cluster_sizes: %s, final name: %s, nof final members: %s" \
                 %(self.t_level,
                   self.org_clusters,
+                  self.org_sizes,
                   "tbd" if self.final_name == None else self.final_name,
                   "tbd" if self.final_members == None else len(self.final_members))
 
