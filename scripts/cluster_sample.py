@@ -71,6 +71,13 @@ def get_args():
                       help="""Register the clustering for this sample in the database
 and update the cluster stats. [Default: Do not register.]""")
 
+    args.add_argument("--force-merge",
+                      action='store_true',
+                      help="""Add the sample even if it causes clusters to merge.
+[Default: Do not add if merge required.]""")
+
+
+
     return args
 
 # --------------------------------------------------------------------------------------------------
@@ -134,6 +141,10 @@ def main(args):
         merges = merging.check_merging_needed(cur, distances, new_snad)
 
         logging.info("Merges that would be required to make this assignment: %s", str([str(m) for m in merges.values()]))
+
+        if args['force_merge'] == False and len(merges.keys()) > 0:
+            logging.info("Exiting becaues there are merges. Database is not updated. Use --force-merge to add the sample (after checking it).")
+            return 1
 
         if args['no_zscore_check'] == False:
             zscore_fail, zscore_info = sndb.check_zscores(cur, distances, new_snad, nbhood, merges)
