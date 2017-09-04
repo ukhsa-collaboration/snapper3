@@ -130,11 +130,10 @@ def main(args):
                 sql = "UPDATE samples SET ignore_sample=True WHERE pk_id=%s"
                 cur.execute(sql, (sample_id, ))
                 logging.info("Sample is now ignored.")
-                return 0
             else:
                 drop_sample(cur, sample_id)
-                conn.commit()
-                return 0
+            conn.commit()
+            return 0
 
         row = cur.fetchone()
         snad = [row['t0'], row['t5'], row['t10'], row['t25'], row['t50'], row['t100'], row['t250']]
