@@ -226,4 +226,31 @@ class SnapperDBInterrogation(object):
             result_samples = [(id2name[s], d) for (s, d) in distances if d <= dis]
             return result_samples
 
+    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    def get_snp_address(self, sam_name):
+        """
+        Get the snp address for the sample.
+
+        Parameters
+        ----------
+        sam_name: str
+            name of the query sample
+
+        Returns
+        -------
+        snad: str
+            "1-2-3-4-5-6-7" if successful else None
+        """
+
+        sql = "SELECT c.t0, c.t5, c.t10, c.t25, c.t50, c.t100, c.t250 FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND s.sample_name=%s"
+        self.cur.execute(sql, (sam_name, ))
+        if self.cur.rowcount < 1:
+            raise SnapperDBInterrogationError("No clustering information found for sample %s" % (sam_name))
+        elif self.cur.rowcount > 1:
+            raise SnapperDBInterrogationError("Too much clustering information found for sample %s" % (sam_name))
+        else:
+            row = self.cur.fetchone()
+            return "%i-%i-%i-%i-%i-%i-%i" % (row['t250'], row['t100'], row['t50'], row['t25'], row['t10'], row['t5'], row['t0'])
+
 # --------------------------------------------------------------------------------------------------
