@@ -51,7 +51,13 @@ def check_merging_needed(cur, distances, new_snad, levels=[0, 5, 10, 25, 50, 100
             # if there is more than one, it measn that the new sample coule go into two different
             # levels clusters at this level and the two clustes need to be merged
             if len(clusters.keys()) > 1:
-                oMer = ClusterMerge(level=lvl, clusters=clusters.keys())
+                sql = "SELECT cluster_name, nof_members FROM cluster_stats WHERE cluster_name IN %s and cluster_level =%s"
+                cur.execute(sql, (tuple(clusters.keys()), 't%s' % (lvl), ))
+                rows = cur.fetchall()
+                sizes = {}
+                for row in rows:
+                    sizes[row['cluster_name']] = row['nof_members']
+                oMer = ClusterMerge(level=lvl, clusters=clusters.keys(), sizes=sizes)
                 merges[lvl] = oMer
 
     return merges
