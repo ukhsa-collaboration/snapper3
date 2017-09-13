@@ -163,8 +163,9 @@ def process_bed_file(args, all_contig_data):
         all_samples.update(all_contig_data[contig].keys())
 
     incl = True if args['include'] else False
+    bedfile = args["exclude"] if args["exclude"] else args["include"]
 
-    with open(args["exclude"]) as fp:
+    with open(bedfile) as fp:
         for line in fp:
             data = line.strip().split("\t")
             try:

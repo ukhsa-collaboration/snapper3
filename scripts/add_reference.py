@@ -73,7 +73,7 @@ def get_args():
                       metavar="NAME",
                       default=None,
                       dest="ref_name",
-                      help="The name of the reference to go into the db [default: input file name before 1st dot]")
+                      help="The name of the reference to go into the db [default: reference file name before 1st dot]")
 
     return args
 

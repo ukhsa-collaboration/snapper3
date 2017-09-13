@@ -61,8 +61,11 @@ class SnapperDBInterrogation(object):
         Connect to the external database for querying.
         """
 
-        self.conn = psycopg2.connect(self.connstring)
-        self.cur = self.conn.cursor(cursor_factory=DictCursor)
+        try:
+            self.conn = psycopg2.connect(self.connstring)
+            self.cur = self.conn.cursor(cursor_factory=DictCursor)
+        except psycopg2.OperationalError as ex:
+            raise SnapperDBInterrogationError(str(ex))
 
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
