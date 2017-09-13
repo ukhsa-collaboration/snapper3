@@ -8,7 +8,7 @@
 # for Tcl script use only
 set    name            snapper3
 set    version         3-0
-set    modroot         /home/ulf/project/snapperdb/${version}
+set    modroot         /phengs/hpc_software/wgs_pipelines/software/phe/workflows/components/${name}/${version}
 
 proc ModulesHelp { } {
         global name version modroot
