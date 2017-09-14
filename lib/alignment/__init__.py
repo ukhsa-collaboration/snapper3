@@ -165,20 +165,90 @@ def process_bed_file(args, all_contig_data):
     incl = True if args['include'] else False
     bedfile = args["exclude"] if args["exclude"] else args["include"]
 
-    with open(bedfile) as fp:
-        for line in fp:
-            data = line.strip().split("\t")
-            try:
+    with open(bedfile, 'r') as fp:
+        if args['whole_genome']:
+            # we've got the reference, so we're going to get a whole genome alignment
+
+            try: # the ref sequence itself will not be touched
+                all_samples.remove("reference")
+            except ValueError:
+                logging.error("reference not found in data structure.")
+                return -1
+
+            if incl == False:
+                # but we're excluding stuff from it
+                for line in fp:
+                    data = [x.strip() for x in line.split("\t")]
+                    bedrange = set(range(int(data[1]),int(data[2]) + 1))
+                    try:
+                        for sam in all_samples:
+                            # so we're removing the bed file positions from A, C, G, T, etc.
+                            for nuc in all_contig_data[data[0]][sam].keys():
+                                if nuc != 'N':
+                                    all_contig_data[data[0]][sam][nuc].difference_update(bedrange)
+                            # and we're adding them to N
+                            if all_contig_data[data[0]][sam].has_key('N'):
+                                all_contig_data[data[0]][sam]['N'].update(bedrange)
+                            else:
+                                all_contig_data[data[0]][sam]['N'] = bedrange
+                    except KeyError:
+                        logging.error("Wrong contig in bed file: %s. Ignoring.", data[0])
+            else:
+                # but we're including only certain regions
+                # 1st get one set of included positions per contig
+                inc_ranges = {}
+                for line in fp:
+                    data = [x.strip() for x in line.split("\t")]
+                    bedrange = set(range(int(data[1]),int(data[2]) + 1))
+                    try:
+                        inc_ranges[data[0]].update(bedrange)
+                    except KeyError:
+                        inc_ranges[data[0]] = bedrange
+
+                # now for each sample/contig
                 for sam in all_samples:
-                    for nuc in all_contig_data[data[0]][sam].keys():
-                        if incl == True:
-                            all_contig_data[data[0]][sam][nuc].intersection_update(range(int(data[1]),
-                                                                                         int(data[2]) + 1))
-                        else:
-                            all_contig_data[data[0]][sam][nuc].difference_update(range(int(data[1]),
-                                                                                       int(data[2]) + 1))
-            except KeyError:
-                logging.error("Wrong contig in bed file: %s. Ignoring.", data[0])
+                    for contig, include_range in inc_ranges.items():
+
+                        # get a set of positions that cover the whole contig but
+                        # leave out the positions we want to include
+                        conlen = len(args['reference'][contig])
+                        conrange = set(range(1, conlen+1))
+                        whole_contig_other_than_include_range = conrange.difference(include_range)
+
+                        try:
+                            # from all nucleotides that aren't N, remove all positions are aren't in the include range
+                            for nuc in all_contig_data[contig][sam].keys():
+                                if nuc != 'N':
+                                    all_contig_data[contig][sam][nuc].intersection_update(include_range)
+
+                            # add whole_contig_other_than_include_range positions to the N positions
+                            # for this sample/contig
+                            if all_contig_data[contig][sam].has_key('N'):
+                                all_contig_data[contig][sam]['N'].update(whole_contig_other_than_include_range)
+                            else:
+                                all_contig_data[contig][sam]['N'] = whole_contig_other_than_include_range
+                        except KeyError:
+                            logging.error("Wrong contig in bed file: %s. Ignoring.", contig)
+
+        else:
+            # if we haven't got a reference we'll get a variant-only alignment
+            for line in fp:
+                data = line.strip().split("\t")
+                try:
+                    for sam in all_samples:
+                        for nuc in all_contig_data[data[0]][sam].keys():
+                            if incl == True:
+                                # so for include we just remove all positions that ARE NOT in the bed file
+                                # effectively making them entirely invariant columns
+                                all_contig_data[data[0]][sam][nuc].intersection_update(range(int(data[1]),
+                                                                                             int(data[2]) + 1))
+                            else:
+                                # so for exclude we just remove all positions that ARE in the bed file
+                                # effectively making them entirely invariant columns
+                                all_contig_data[data[0]][sam][nuc].difference_update(range(int(data[1]),
+                                                                                           int(data[2]) + 1))
+                except KeyError:
+                    logging.error("Wrong contig in bed file: %s. Ignoring.", data[0])
 
     return 0
 
