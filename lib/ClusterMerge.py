@@ -80,7 +80,7 @@ class ClusterMerge(object):
 
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-    def update_tables(self, cur):
+    def update_tables(self, cur, levels=['t250', 't100', 't50', 't25', 't10', 't5', 't0']):
         '''
         Update the entries in the tables for this merge.
 
@@ -90,6 +90,8 @@ class ClusterMerge(object):
             that's me
         cur: obj
             database cursor
+        levels: list
+            default: ['t250', 't100', 't50', 't25', 't10', 't5', 't0']
 
         Returns
         -------
@@ -115,6 +117,16 @@ class ClusterMerge(object):
         for source in clu_to_del:
             sql = "INSERT INTO merge_log (cluster_level, source_cluster, target_cluster, time_of_merge) VALUES (%s, %s, %s, %s)"
             cur.execute(sql, (self.t_level, source, self.final_name, nownow, ))
+
+        # write to the log which samples getchanged from what to what
+        sql = "SELECT s.sample_name, c.t0, c.t5, c.t10, c.t25, c.t50, c.t100, c.t250 FROM samples s, samples_clusters c WHERE s.pk_id=c.fk_sample_id AND c."+self.t_level+" IN %s"
+        cur.execute(sql , (tuple(self.org_clusters), ))
+        rows = cur.fetchall()
+        for r in rows:
+            logging.warning("Clustering for sample %s will be changed from %s to %s",
+                            r['sample_name'],
+                            '-'.join([str(r[x]) for x in levels]),
+                            '-'.join([str(self.final_name) if x == self.t_level else str(r[x]) for x in levels]))
 
         sql = "UPDATE sample_clusters SET "+self.t_level+"=%s WHERE "+self.t_level+" IN %s"
         cur.execute(sql, (self.final_name, tuple(self.org_clusters), ))
