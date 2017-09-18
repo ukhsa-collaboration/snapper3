@@ -1,11 +1,12 @@
-HOST=$1
-DB=$2
+USER=$1
+HOST=$2
+DB=$3
 echo "Dropping DB: $DB"
-dropdb -U ulf -h $HOST $DB
+dropdb -U $USER -h $HOST $DB
 echo "Creating DB: $DB"
-createdb -U ulf -h $HOST $DB
+createdb -U $USER -h $HOST $DB
 echo "Creating tables in $DB"
-psql -U ulf -h $HOST $DB < setup_snapper3_db.sql
+psql -U $USER -h $HOST $DB < setup_snapper3_db.sql
 echo "Creating functions in $DB"
-psql -U ulf -h $HOST $DB < add_psql_functions.sql
+psql -U $USER -h $HOST $DB < add_psql_functions.sql
 echo "Finished!"
