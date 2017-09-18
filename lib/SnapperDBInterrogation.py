@@ -256,4 +256,48 @@ class SnapperDBInterrogation(object):
             row = self.cur.fetchone()
             return "%i-%i-%i-%i-%i-%i-%i" % (row['t250'], row['t100'], row['t50'], row['t25'], row['t10'], row['t5'], row['t0'])
 
+    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    def get_nearest(self, sam_name):
+        """
+        Derive the nearest distance for this sample from the SNP address for the sample.
+
+        Parameters
+        ----------
+        sam_name: str
+            name of the query sample
+
+        Returns
+        -------
+        nearest: str
+            e.g.: 100>=x>50
+        """
+
+        sql = "SELECT c.t0, c.t5, c.t10, c.t25, c.t50, c.t100, c.t250 FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND s.sample_name=%s"
+        self.cur.execute(sql, (sam_name, ))
+        if self.cur.rowcount < 1:
+            raise SnapperDBInterrogationError("No clustering information found for sample %s" % (sam_name))
+        elif self.cur.rowcount > 1:
+            raise SnapperDBInterrogationError("Too much clustering information found for sample %s" % (sam_name))
+        else:
+            row = self.cur.fetchone()
+
+        levels = [250, 100, 50, 25, 10, 5, 0]
+        for lvl in levels:
+            t_lvl = 't%i' % (lvl)
+            sql = "SELECT pk_id FROM sample_clusters WHERE " + t_lvl + "=%s"
+            self.cur.execute(sql, (row[t_lvl], ))
+            if self.cur.rowcount == 1:
+                if lvl == 250:
+                    nearest = "x>250"
+                else:
+                    nearest = "%i>=x>%i" % (levels[levels.index(lvl)-1], lvl)
+                break
+        # yes, for-loop-else, will be executed if the for loop did not exit via the *break*
+        else:
+            nearest = "x=0"
+
+        return nearest
+
+
 # --------------------------------------------------------------------------------------------------
