@@ -119,8 +119,8 @@ class ClusterMerge(object):
             cur.execute(sql, (self.t_level, source, self.final_name, nownow, ))
 
         # write to the log which samples getchanged from what to what
-        sql = "SELECT s.sample_name, c.t0, c.t5, c.t10, c.t25, c.t50, c.t100, c.t250 FROM samples s, samples_clusters c WHERE s.pk_id=c.fk_sample_id AND c."+self.t_level+" IN %s"
-        cur.execute(sql , (tuple(self.org_clusters), ))
+        sql = "SELECT s.sample_name, c.t0, c.t5, c.t10, c.t25, c.t50, c.t100, c.t250 FROM samples s, sample_clusters c WHERE s.pk_id=c.fk_sample_id AND c."+self.t_level+" IN %s"
+        cur.execute(sql , (tuple([x for self.org_clusters in a if x != self.final_name]), ))
         rows = cur.fetchall()
         for r in rows:
             logging.warning("Clustering for sample %s will be changed from %s to %s",
