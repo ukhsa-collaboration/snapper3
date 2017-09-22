@@ -32,7 +32,7 @@ CREATE TABLE variants (
 );
 
 DROP TABLE IF EXISTS sample_clusters;
-CREATE TABLE sample_clusters  (
+CREATE TABLE sample_clusters (
     pk_id SERIAL PRIMARY KEY,
     fk_sample_id integer references samples(pk_id),
     t0 integer,
@@ -69,6 +69,27 @@ CREATE TABLE merge_log (
     source_cluster integer,
     target_cluster integer,
     time_of_merge timestamp
+);
+
+DROP TABLE IF EXISTS sample_history;
+CREATE TABLE sample_history (
+    pk_id SERIAL PRIMARY KEY,
+    fk_sample_id integer references samples(pk_id),
+    t0_old integer,
+    t5_old integer,
+    t10_old integer,
+    t25_old integer,
+    t50_old integer,
+    t100_old integer,
+    t250_old integer,
+    t0_new integer,
+    t5_new integer,
+    t10_new integer,
+    t25_new integer,
+    t50_new integer,
+    t100_new integer,
+    t250_new integer,
+    renamed_at timestamp
 );
 
 CREATE EXTENSION intarray;
