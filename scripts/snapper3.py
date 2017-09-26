@@ -16,6 +16,7 @@ import get_alignment
 import remove_sample
 import get_closest
 import export_sample_variants
+import get_history
 
 # -------------------------------------------------------------------------------------------------
 
@@ -85,7 +86,6 @@ def get_args():
                           formatter_class=RawTextHelpFormatter,
                           add_help=False)
 
-
     subparsers.add_parser("cluster_sample",
                           description=cluster_sample.get_desc(),
                           help="Put a sample into clusters.",
@@ -118,6 +118,13 @@ def get_args():
                           description=export_sample_variants.get_desc(),
                           help="Export variants for a given sample in json format.",
                           parents=[export_sample_variants.get_args()],
+                          formatter_class=RawTextHelpFormatter,
+                          add_help=False)
+
+    subparsers.add_parser("get_history",
+                          description=get_history.get_desc(),
+                          help="Get a sample's SNP address history.",
+                          parents=[get_history.get_args()],
                           formatter_class=RawTextHelpFormatter,
                           add_help=False)
 
@@ -163,6 +170,8 @@ def main():
         return export_sample_variants.main(args)
     elif args["cmd"] == "add_reference":
         return add_reference.main(args)
+    elif args["cmd"] == "get_history":
+        return get_history.main(args)
     return 1
 
 # -------------------------------------------------------------------------------------------------
