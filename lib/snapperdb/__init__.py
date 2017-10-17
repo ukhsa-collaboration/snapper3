@@ -6,6 +6,7 @@ author: ulf.schaefer@phe.gov.uk
 """
 
 import logging
+import math
 
 from lib.utils import get_closest_threshold
 from lib.ClusterStats import ClusterStats
@@ -124,7 +125,7 @@ def get_new_snp_address(nbhood, levels=[0, 5, 10, 25, 50, 100, 250]):
 
 # --------------------------------------------------------------------------------------------------
 
-def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25, 50, 100, 250]):
+def check_zscores(cur, distances, new_snad, merges, levels=[0, 5, 10, 25, 50, 100, 250]):
     """
     Check the zscores of putting a new sample in the clusters proposed, considering merges.
 
@@ -137,11 +138,6 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
         e.g. [(298, 0), (37, 3), (55, 4)]
     new_snad: list
         [t0 or None, t5 or None, t10, t25, t50, t100, t250]
-    nbhood: dict
-        {'closest_distance': int,
-         'nearest_t': int,
-         'closest_sample': int,
-         'closest_snad': [list of 7 ints]}
     merges: dict
         {lvl: ClusterMerge object}
 
@@ -216,22 +212,10 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
             logging.info("All distances in cluster %s on level %s are identical. Skipping zscore check.", clu, t_lvl)
             continue
 
-        # calculate zscore
-        mean_all_dist_in_c = oStats.mean_pw_dist
-        zscr = (avg_dis - mean_all_dist_in_c) / oStats.stddev_pw_dist
-
-        mess = "z-score of new sample to cluster %s on level %s: %s" % (clu, t_lvl, zscr)
-        logging.debug(mess)
-
-        if zscr <= -1.5:
-            fail = True
-            info.append(mess)
-
-        # do this for all members of the cluster
+        means = {'new_mem': avg_dis}
         nof_mems = len(current_mems)
         merge_per_sample_stats = {}
         for c_mem in current_mems:
-
             # get the mean distance of this sample to all other samples in the cluster (w/o the one to be added)
             old_medis = None
             if merges.has_key(lvl) == True:
@@ -255,10 +239,22 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
             # nof_mems is the number of members w/o the sample that we want to add to the cluster
             # update the mean distance with the new distance and calculate the z-score
             new_medis = ((old_medis * (nof_mems - 1)) + new_dist ) / float(nof_mems)
+            means[c_mem] = new_medis
 
-            zscr = (new_medis - mean_all_dist_in_c) / oStats.stddev_pw_dist
+        mean_of_means = sum(means.values()) / float(len(means))
 
-            mess = "z-score of sample %s to cluster %s on level %s incl new member: %s" % (c_mem, clu, t_lvl, zscr)
+        #calculate variance and stddev
+        x = []
+        for d in means.values():
+            x.append((d - mean_of_means)**2.0)
+
+        variance_of_means = sum(x)/len(x)
+        stddev_of_means = math.sqrt(variance_of_means)
+
+        # calculate zscore
+        for k, v in means.items():
+            zscr = (v - mean_of_means) / stddev_of_means
+            mess = "z-score of sample %s to cluster %s on level %s incl new member: %s" % (str(k), clu, t_lvl, zscr)
             logging.debug(mess)
 
             if zscr <= -1.5:
