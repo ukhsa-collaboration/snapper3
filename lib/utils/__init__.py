@@ -167,7 +167,6 @@ def get_data_from_seqs(sam, ref):
             logging.error("Sequence length not the same between sample and ref. Is this the right reference?")
             return None
 
-
     for (r_con, s_con) in zip(refere_contigs, sample_contigs):
         data['positions'][r_con] = {u'-': set(), u'A': set(), u'C': set(), u'G': set(), u'N': set(), u'T': set()}
         ref_seq = ref[r_con].upper()
@@ -243,5 +242,58 @@ def get_all_cluster_members(cur, c, t):
     for r in rows:
         neighbours.append(r['samid'])
     return neighbours
+
+# --------------------------------------------------------------------------------------------------
+
+def calculate_nless_n50(data, fasta):
+    """
+    Calculate the n50 of N-less sequence.
+
+    Parameters
+    ----------
+    data: dict
+        as returned from get_data_from_seqs()
+    fasta: str
+        fasta input file
+
+    Returns
+    -------
+    """
+
+    with open(fasta) as f:
+        dInp = read_fasta(f)
+
+    lens = []
+    for con, condata in data['positions'].iteritems():
+        n_list = list(condata['N'])
+        n_list.sort()
+
+        # if there are no Ns
+        if len(n_list) <= 0:
+            lens.append(len(dInp[con]))
+        else:
+            for i in range(len(n_list)):
+                if i == 0:
+                    lens.append(n_list[i] - 1)
+                if i == len(n_list) - 1:
+                    lens.append(len(dInp[con]) - n_list[i])
+                else:
+                    l = (n_list[i] - n_list[i-1]) - 1
+                    lens.append(l)
+
+    lens = [x for x in lens if x > 0]
+    if len(lens) <= 0:
+        n50 = 0
+    else:
+        lens.sort(reverse=True)
+        sm = sum(lens)
+        x = 0
+        i = 0
+        while x < sm*0.5:
+            x += lens[i]
+            i += 1
+        n50 = lens[i-1]
+
+    return n50
 
 # --------------------------------------------------------------------------------------------------
