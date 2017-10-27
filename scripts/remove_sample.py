@@ -180,6 +180,8 @@ def main(args):
         # now remove the sample
         sql = "DELETE FROM sample_clusters WHERE fk_sample_id=%s"
         cur.execute(sql, (sample_id, ))
+        sql = "DELETE FROM sample_history WHERE fk_sample_id=%s"
+        cur.execute(sql, (sample_id, ))
 
         if args['just_ignore'] == True:
             logging.info("You chose not to remove the sample completely.")
@@ -349,6 +351,10 @@ def update_cluster_stats_post_removal(cur, sid, clu, lvl, distances, split, zscr
             new_clu_name = row['m'] + 1
             sql = "INSERT INTO cluster_stats (cluster_level, cluster_name, nof_members, nof_pairwise_dists, mean_pwise_dist, stddev) VALUES (%s, %s, %s, %s, %s, %s)"
             cur.execute(sql, (t_lvl, new_clu_name, oStatsTwo.members, oStatsTwo.nof_pw_dists, oStatsTwo.mean_pw_dist, oStatsTwo.stddev_pw_dist, ))
+
+            # document the upcoming change in the sample history
+            update_sample_history(cur, t_lvl, new_clu_name, grli)
+
             # put all members of this subcluster in the new cluster in the database
             sql = "UPDATE sample_clusters SET "+t_lvl+"=%s WHERE fk_sample_id IN %s"
             cur.execute(sql, (new_clu_name, tuple(grli), ))
@@ -683,6 +689,49 @@ def expand_from_node(cur, a, c, lvl, distances, sample_id=None):
     logging.info("Samples connected to sample %s: %s.", a, with_a)
 
     return with_a
+
+# --------------------------------------------------------------------------------------------------
+
+def update_sample_history(cur, t_lvl, new_clu_name, grli):
+    """
+    When changing a snp address because the cluster was split, this need to go into sample_history.
+
+    Parameters
+    ----------
+    cur: obj
+        database cursor
+    t_lvl:
+        level where snp address changed, e.g. 't100'
+    new_clu_name:
+        the new cluster name at this level
+    grli:
+        list of sampleids for which this change is effective
+
+    Returns
+    -------
+    0
+    """
+
+    levels = ['t0', 't5', 't10', 't25', 't50', 't100', 't250']
+
+    for samid in grli:
+
+        sql = "SELECT t0, t5, t10, t25, t50, t100, t250 FROM sample_clusters WHERE fk_sample_id=%s"
+        cur.execute(sql, (samid, ))
+        oldsnad = cur.fetchone()
+
+        # one line conditional dictionary comprehension
+        newsnad = {lvl: oldsnad[lvl] if lvl != lvl_in else new_clu_name for lvl in levels}
+
+        sql = "INSERT INTO sample_history (fk_sample_id, t250_old, t100_old, t50_old, t25_old, t10_old, t5_old, t0_old, t250_new, t100_new, t50_new, t25_new, t10_new, t5_new, t0_new, renamed_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+        cur.execute(sql, (samid,
+                          oldsnad['t250'], oldsnad['t100'], oldsnad['t50'], oldsnad['t25'],
+                          oldsnad['t10'], oldsnad['t5'], oldsnad['t0'],
+                          newsnad['t250'], newsnad['t100'], newsnad['t50'], newsnad['t25'],
+                          newsnad['t10'], newsnad['t5'], newsnad['t0'],
+                          datetime.now()))
+
+    return 0
 
 # --------------------------------------------------------------------------------------------------
 
