@@ -42,13 +42,13 @@ CREATE TABLE sample_clusters (
     t50 integer,
     t100 integer,
     t250 integer,
-    t0_mean real,
-    t5_mean real,
-    t10_mean real,
-    t25_mean real,
-    t50_mean real,
-    t100_mean real,
-    t250_mean real
+    t0_mean double precision,
+    t5_mean double precision,
+    t10_mean double precision,
+    t25_mean double precision,
+    t50_mean double precision,
+    t100_mean double precision,
+    t250_mean double precision
 );
 
 DROP TABLE IF EXISTS cluster_stats;
@@ -58,8 +58,8 @@ CREATE TABLE cluster_stats (
     cluster_name integer,
     nof_members integer,
     nof_pairwise_dists integer,
-    mean_pwise_dist real,
-    stddev real
+    mean_pwise_dist double precision,
+    stddev double precision
 );
 
 DROP TABLE IF EXISTS merge_log;
