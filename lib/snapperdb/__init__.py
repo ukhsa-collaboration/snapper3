@@ -7,6 +7,7 @@ author: ulf.schaefer@phe.gov.uk
 
 import logging
 import math
+import operator
 
 from lib.utils import get_closest_threshold
 from lib.ClusterStats import ClusterStats
@@ -260,6 +261,8 @@ def check_zscores(cur, distances, new_snad, merges, levels=[0, 5, 10, 25, 50, 10
             if zscr <= -1.5:
                 fail = True
                 info.append(mess)
+                mean_mess = "\n".join(["%s:\t%s" % (x[0], x[1]) for x in sorted(means.items(), key=operator.itemgetter(1))])
+                info.append("zscores where calculated on the following means:\n%s" % (str(mean_mess)))
 
         # if there was a merge we want to remember that we already calculated all this stuff
         if merges.has_key(lvl) == True:
