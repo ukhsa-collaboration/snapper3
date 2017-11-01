@@ -154,9 +154,9 @@ def main(args):
                 return 1
 
             if zscore_fail == True:
-                logging.error("z-score check for this assignment has failed. Database is not updated.")
                 for s in zscore_info:
                     logging.info(s)
+                logging.error("z-score check for this assignment has failed. Database is not updated.")
                 return 1
 
             logging.info("All z-score checks passed for this assignment.")
