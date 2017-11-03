@@ -158,10 +158,11 @@ class ClusterStats(object):
                 b = (di - self.mean_pw_dist) * (di - prev_m)
 
                 # any better idea of sorting out rounding errors?
-                if round(a, 10) == round(b, 10):
+                df = a - b
+                if df < 0.0:
                     self.variance_pw_dist = 0.0
                 else:
-                    self.variance_pw_dist = (a - b) / N
+                    self.variance_pw_dist = df / N
 
                 self.stddev_pw_dist = math.sqrt(self.variance_pw_dist)
 
