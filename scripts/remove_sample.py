@@ -275,8 +275,8 @@ def make_known_outlier(cur, sample_id, snad, distances):
     try:
         t250_members.remove(sample_id)
     except ValueError:
-        logging.error("Bizzare data inconsistency for sample id %s and t250 cluster %s.", sample_id, row['t250'])
-        return 1
+        logging.error("Bizzare data inconsistency for sample id %s and t250 cluster %s.", sample_id, snad[6])
+        return  1
 
     logging.info("Calculating %i distances to update stats.", len(t250_members))
     # get the distances and remember them in the dict
@@ -311,7 +311,7 @@ def make_known_outlier(cur, sample_id, snad, distances):
         try:
             members.remove(sample_id)
         except ValueError:
-            logging.error("Bizzare data inconsistency for sample id %s and %s cluster %s.", sid, t_lvl, clu)
+            logging.error("Bizzare data inconsistency for sample id %s and %s cluster %s.", sample_id, t_lvl, clu)
             return 1
 
         this_di = [distances[sample_id][m] for m in members]
@@ -375,10 +375,14 @@ def update_clustering(cur, sample_id, snad, distances, zscr_flag):
         cur.execute(sql, (snad[6], ))
         t250_members = [r['samid'] for r in cur.fetchall()]
         try:
+            logging.debug("Removing %s from list: %s", sample_id, t250_members)
             t250_members.remove(sample_id)
         except ValueError:
-            logging.error("Bizzare data inconsistency for sample id %s and t250 cluster %s.", sample_id, row['t250'])
-            return 1
+            if zscr_flag == True:
+                logging.debug("Could not find %s as a member of t250 cluster %s, but it's OK because it's a known outlier.", sample_id, snad[6])
+            else:
+                logging.error("Bizzare data inconsistency for sample id %s and t250 cluster %s.", sample_id, snad[6])
+                return 1
 
         logging.info("Calculating %i distances to update stats.", len(t250_members))
         # get the distances and remember them in the dict
@@ -422,12 +426,16 @@ def split_clusters(cur, sample_id, problems, lvl, distances):
     """
 
     groups = {}
+    visited = set()
     for (c, a, b) in problems:
         mems = get_all_cluster_members(cur, c, 't'+str(lvl))
         for node in [a,b]:
-            try:
-                _ = groups[node]
-            except KeyError:
+            # get a set of all samples that are already in one of the groups
+            _ = [visited.update(x) for x in groups.values()]
+            # if we already expanded from that node or went past it in a previous group, don't go
+            if groups.has_key(node) or (node in visited):
+                continue
+            else:
                 groups[node] = expand_from_node(cur, node, c, lvl, distances, sample_id)
 
         # if the combined langth of all groups covers the whole cluster (without the removee), we're done
@@ -492,11 +500,17 @@ def update_cluster_stats_post_removal(cur, sid, clu, lvl, distances, split, zscr
     sql = "SELECT c.fk_sample_id AS samid FROM sample_clusters c, samples s WHERE c."+t_lvl+"=%s AND c.fk_sample_id=s.pk_id AND s.ignore_zscore IS FALSE"
     cur.execute(sql, (clu, ))
     members = [r['samid'] for r in cur.fetchall()]
+    logging.debug("Got the follwoing members: %s", members)
     try:
+        logging.debug("Removing %s from list: %s", sid, members)
         members.remove(sid)
     except ValueError:
-        logging.error("Bizzare data inconsistency for sample id %s and %s cluster %s.", sid, t_lvl, clu)
-        return None
+        if zscr_flag == True:
+            logging.debug("Could not find %s as a member of %s cluster %s, but it's OK because it's a known outlier.",
+                          sid, t_lvl, clu)
+        else:
+            logging.error("Bizzare data inconsistency for sample id %s and %s cluster %s.", sid, t_lvl, clu)
+            return None
 
     # if the was previously ignore do not remove it from stats object, because it was never considered when calculating the stats
     if zscr_flag == False:
@@ -521,9 +535,11 @@ def update_cluster_stats_post_removal(cur, sid, clu, lvl, distances, split, zscr
 
         # put the largest subcluster at the front of the list of subclusters
         group_lists = sorted(groups.values(), key=len, reverse=True)
+        logging.debug("These are the group lists: %s", group_lists)
         # for the largest group
         for grli in group_lists[1:]:
             # for all members of this group
+            logging.debug("Current group list: %s", grli)
             for m in grli:
                 # remove from members, from stats object and remember that you removed it in that list
                 logging.debug("Removing %s from %s", m, members)
@@ -678,7 +694,7 @@ def check_cluster_integrity(cur, sample_id, snad, distances, levels=[0, 5, 10, 2
                 connected_mems.append(sa)
             remember_distance(distances, sample_id, sa, di)
 
-        logging.debug("Samples connected via removee: %s", connected_mems)
+        logging.debug("Samples connected via removee: %s", sorted(connected_mems))
 
         # investigate all pw distances between connected members
         potentially_broken_pairs = []
@@ -748,7 +764,7 @@ def check_cluster_integrity(cur, sample_id, snad, distances, levels=[0, 5, 10, 2
                 # we want to know for updating later
 
         # we checked all pairs and always found b somehow, cluster is fine
-        if broken == False:
+        if splits.has_key(lvl) == False:
             splits[lvl] = None
 
     return splits
