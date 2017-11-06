@@ -471,9 +471,6 @@ def update_cluster_stats_post_removal(cur, sid, clu, lvl, distances, split, zscr
     None if fail
     """
 
-    # Yes, in case this is a zscore_ignore sample and there is a split to be done, but not on this level,
-    # this method will take stuff out of the database, do nothing to them and put them back in. I know.
-
     t_lvl = "t%i" % (lvl)
 
     logging.info("Updating stats for cluster %s on level %s.", clu, t_lvl)
@@ -482,8 +479,12 @@ def update_cluster_stats_post_removal(cur, sid, clu, lvl, distances, split, zscr
     sql = "SELECT nof_members, mean_pwise_dist, stddev FROM cluster_stats WHERE cluster_level=%s AND cluster_name=%s"
     cur.execute(sql, (t_lvl, clu, ))
     if cur.rowcount == 0:
-        logging.error("Cluster stats for level %s and cluster %s not found.", t_lvl, clu)
-        return None
+         if zscr_flag == True:
+            logging.info("Sample is a known outlier and the only member of level %s cluster %s. So there are no stats to update.", t_lvl, clu)
+            return 0
+         else:
+            logging.error("Cluster stats for level %s and cluster %s not found.", t_lvl, clu)
+            return None
     row = cur.fetchone()
 
     # when deleting the last member of this cluster there is no need to update anything, just get rid of it
