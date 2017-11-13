@@ -6,13 +6,24 @@ Module for accessing the SnapperDB3 database.
 """
 
 import logging
+import subprocess
+import sys
+import tempfile
+import os
+import shutil
 
 import psycopg2
 from psycopg2.extras import DictCursor
 
-
-from lib.distances import get_distances, get_relevant_distances
+from lib.distances import get_distances, get_relevant_distances, get_distance_matrix
 from lib.utils import get_closest_threshold
+
+HAVE_BIOPYTHON = True
+try:
+    from Bio import Phylo
+    from Bio.Phylo import TreeConstruction
+except ImportError:
+    HAVE_BIOPYTHON = False
 
 # --------------------------------------------------------------------------------------------------
 
@@ -344,5 +355,169 @@ class SnapperDBInterrogation(object):
                                    'time': r['renamed_at']})
 
         return res
+
+    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    def get_tree(self, samples, clusters, method):
+        """
+        Build a tree for a given set of samples with a given method.
+
+        Parameters
+        ----------
+        samples: list
+            list of sample names
+        clusters: dict
+            {'lvl': [1,2,3], 'lvl': [2,5,8]}
+        method: str
+            either 'ML' or 'NJ'
+
+        Returns
+        -------
+        tree as newick string
+
+        """
+
+        treesams = {}
+
+        if samples != None:
+
+            sql = "SELECT pk_id, sample_name FROM samples WHERE sample_name IN %s"
+            self.cur.execute(sql, (tuple(samples), ))
+            rows = self.cur.fetchall()
+            for r in rows:
+                treesams[r['sample_name']] = r['pk_id']
+
+            missing = set(samples).difference(set(treesams.keys()))
+            if len(missing) > 0:
+                logging.warning("The following sample names were not found in the database: %s", str(list(missing)))
+            else:
+                logging.info("All samples names provided were found in the database.")
+
+        if clusters != None:
+            for t_lvl, clusterlist in clusters.items():
+                try:
+                    sql = "SELECT c.fk_sample_id AS id, s.sample_name AS name FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND c."+t_lvl+" IN %s"
+                    self.cur.execute(sql, (tuple(clusterlist), ))
+                    rows = self.cur.fetchall()
+                    for r in rows:
+                        treesams[r['name']] = r['id']
+                except psycopg2.ProgrammingError as e:
+                    raise SnapperDBInterrogationError(e)
+
+        nofsams = len(treesams.keys())
+        if nofsams < 3:
+            raise SnapperDBInterrogationError("At least 3 samples are required to make a tree. Only %i found.", nofsams)
+
+        logging.info("Calculating %s tree for %i samples.", method, nofsams)
+
+        if method == 'NJ':
+            if HAVE_BIOPYTHON == False:
+                raise SnapperDBInterrogationError("You need to have Biopython for making NJ trees.")
+            return self._make_nj_tree(treesams)
+        elif method == 'ML':
+            if self._can_we_make_an_ml_tree() == False:
+                raise SnapperDBInterrogationError("You need to have FastTree for making ML trees.")
+            return self._make_ml_tree(treesams)
+        else:
+            raise SnapperDBInterrogationError("%s is an unsupported method." % (method))
+
+    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    def _make_nj_tree(self, treesams):
+        """
+        **PRIVATE**
+
+        Parameters
+        ----------
+        treesams: dict
+            {sam name: samid, sam name: samid, ...}
+
+        Returns
+        -------
+        nwkstring: str
+            tree as newick string
+        """
+
+        iNofSams = len(treesams.keys())
+        logging.info("Calculating %i distances. Patience!", ((iNofSams**2) - iNofSams) / 2)
+
+        dist_mat = get_distance_matrix(self.cur, treesams.values())
+
+        aSampleNames = treesams.keys()
+        aSimpleMatrix = []
+        for i, sample_1 in enumerate(aSampleNames):
+            mat_line = []
+            for j, sample_2 in enumerate(aSampleNames):
+                if j < i:
+                    sid1 = treesams[sample_1]
+                    sid2 = treesams[sample_2]
+                    mat_line.append(dist_mat[sid1][sid2])
+                elif j == i:
+                    mat_line.append(0)
+                else:
+                    pass
+            aSimpleMatrix.append(mat_line)
+
+        logging.info("Bulding tree.")
+        oDistMat = TreeConstruction._DistanceMatrix(aSampleNames, aSimpleMatrix)
+        constructor = TreeConstruction.DistanceTreeConstructor()
+        oTree = constructor.nj(oDistMat)
+
+        # I don't know how to get newick string from this object without a file ...
+        td = tempfile.mkdtemp()
+        tmpfile = os.path.join(td, 'tree.nwk')
+        Phylo.write(oTree, tmpfile, 'newick')
+        nwkstring = ""
+        with open(tmpfile, 'r') as f:
+            nwkstring = f.read()
+        shutil.rmtree(td)
+
+        return nwkstring
+
+    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    def _make_ml_tree(self, treesams):
+        """
+        **PRIVATE**
+
+        Parameters
+        ----------
+        treesams: dict
+            {samid: sam name, samid: sam name, ...}
+
+        Returns
+        -------
+
+        not sure yet
+
+        """
+
+        raise NotImplementedError
+
+    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    def _can_we_make_an_ml_tree(self):
+        """
+        **PRIVATE**
+
+        Check if we can call FastTree.
+
+        Parameters
+        ----------
+
+        Returns
+        -------
+        true if we can, else false
+
+        """
+
+        p = subprocess.Popen("which FastTree", shell=True, stdin=None,
+                             stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, close_fds=True)
+        (_, p_err) = p.communicate()
+
+        flag = not "no FastTree in" in p_err
+
+        return flag
 
 # --------------------------------------------------------------------------------------------------
