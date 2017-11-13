@@ -534,6 +534,8 @@ def update_cluster_stats_post_removal(cur, sid, clu, lvl, distances, split, zscr
         # groups[a] = [1,2,3]
         # groups[b] = [4,5,6]
 
+        knwntlrs = set()
+
         # put the largest subcluster at the front of the list of subclusters
         group_lists = sorted(groups.values(), key=len, reverse=True)
         logging.debug("These are the group lists: %s", group_lists)
@@ -544,16 +546,22 @@ def update_cluster_stats_post_removal(cur, sid, clu, lvl, distances, split, zscr
             for m in grli:
                 # remove from members, from stats object and remember that you removed it in that list
                 logging.debug("Removing %s from %s", m, members)
-                members.remove(m)
-                this_di = [d for (s, d) in get_distances_from_memory(cur, distances, m, members)]
-                assert oStats.members == (len(this_di) + 1)
-                # i.e. turn the oStats object into the stats object for the largest cluster after the split
-                oStats.remove_member(this_di)
-                removed_members.append(m)
+                if m in members:
+                    members.remove(m)
+                    this_di = [d for (s, d) in get_distances_from_memory(cur, distances, m, members)]
+                    assert oStats.members == (len(this_di) + 1)
+                    # i.e. turn the oStats object into the stats object for the largest cluster after the split
+                    oStats.remove_member(this_di)
+                    removed_members.append(m)
+                else:
+                    knwntlrs.add(m)
+                    logging.debug("Could not remove %s from members, but it's probably a kown outlier.")
 
         # for the other subclustrs
         for grli in group_lists[1:]:
             # make a new stats object based on the list of members and all pw distances between them
+            # remove known outliers previously encountered from consideration
+            grli = list(set(grli).difference(knwntlrs))
             all_pw_grdi = get_all_pw_dists(cur, grli)
             oStatsTwo = ClusterStats(members=len(grli), dists=all_pw_grdi)
             sql = "SELECT max("+t_lvl+") AS m FROM sample_clusters"
