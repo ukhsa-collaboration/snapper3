@@ -18,6 +18,8 @@ from psycopg2.extras import DictCursor
 from lib.distances import get_distances, get_relevant_distances, get_distance_matrix
 from lib.utils import get_closest_threshold
 
+import get_alignment
+
 HAVE_BIOPYTHON = True
 try:
     from Bio import Phylo
@@ -358,7 +360,7 @@ class SnapperDBInterrogation(object):
 
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-    def get_tree(self, samples, clusters, method):
+    def get_tree(self, samples, clusters, method, ref=None, refname=None):
         """
         Build a tree for a given set of samples with a given method.
 
@@ -417,7 +419,7 @@ class SnapperDBInterrogation(object):
         elif method == 'ML':
             if self._can_we_make_an_ml_tree() == False:
                 raise SnapperDBInterrogationError("You need to have FastTree for making ML trees.")
-            return self._make_ml_tree(treesams)
+            return self._make_ml_tree(treesams, ref, refname)
         else:
             raise SnapperDBInterrogationError("%s is an unsupported method." % (method))
 
@@ -476,7 +478,7 @@ class SnapperDBInterrogation(object):
 
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-    def _make_ml_tree(self, treesams):
+    def _make_ml_tree(self, treesams, ref, refname):
         """
         **PRIVATE**
 
@@ -492,7 +494,43 @@ class SnapperDBInterrogation(object):
 
         """
 
-        raise NotImplementedError
+        td = tempfile.mkdtemp()
+        tmpfile = os.path.join(td, 'align.fasta')
+
+        inp = {'whole_genome': False,
+               'snp_address': False,
+               'remove_invariant_npos': True,
+               'reference': ref,
+               'column_gaps': 0.5,
+               'column_Ns': 0.5,
+               'cmd': 'get_alignment',
+               'db': self.connstring,
+               'sample_Ns': None,
+               'sample_gaps': None,
+               'version': 'internal',
+               'include': None,
+               'samples': treesams.keys(),
+               'exclude': None,
+               'debug': False,
+               'sample_Ns_gaps_auto_factor': 2.0,
+               'name_of_ref_in_db': refname,
+               'out': tmpfile}
+
+        if get_alignment.main(inp) != 0:
+            raise SnapperDBInterrogationError("Error in get_alignment main.")
+
+        cmd = "FastTree -nt %s" % (tmpfile)
+        logging.info("Running FastTree now. Patience.")
+        p = subprocess.Popen(cmd, shell=True, stdin=None,
+                             stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, close_fds=True)
+        (p_out, p_err) = p.communicate()
+
+        logging.debug("FastTree stderr: %s", p_err)
+
+        shutil.rmtree(td)
+
+        return p_out
 
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -514,9 +552,12 @@ class SnapperDBInterrogation(object):
         p = subprocess.Popen("which FastTree", shell=True, stdin=None,
                              stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE, close_fds=True)
-        (_, p_err) = p.communicate()
+        (p_out, p_err) = p.communicate()
 
         flag = not "no FastTree in" in p_err
+
+        if flag == True:
+            logging.info("Using %s to make an ML tree.", p_out.strip())
 
         return flag
 

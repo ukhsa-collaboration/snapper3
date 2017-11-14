@@ -82,6 +82,18 @@ or a comma-separated list w/o blanks. [Default: None, but then --clusters has to
                       help="""List of clusters to put in the tree. List of key:value pairs
 , e.g. t100:25,t50:13,t50:14 [Default: None, but then --samples has to be used.]""")
 
+    args.add_argument("--reference",
+                      "-r",
+                      type=str,
+                      default=None,
+                      dest="ref",
+                      help="Path to reference specified (FASTA). Required for ML, else ignored.")
+
+    args.add_argument("--refname",
+                      type=str,
+                      default=None,
+                      help="The name of the reference in the database. Required for ML, else ignored.")
+
     return args
 
 # --------------------------------------------------------------------------------------------------
@@ -103,6 +115,11 @@ def main(args):
     if args['samples'] == None and args['clusters'] == None:
         logging.error("Either --samples or --clusters need to be specified.")
         return 1
+
+    if args['method'] == 'ML':
+        if args['ref'] == None or args['refname'] == None:
+            logging.error("For ML trees, both --reference and --refname are required.")
+            return 1
 
     samples = None
     if args['samples'] != None:
@@ -135,7 +152,7 @@ def main(args):
     result = None
     with SnapperDBInterrogation(conn_string=args['db']) as sdbi:
         try:
-            result = sdbi.get_tree(samples, clusters, args['method'])
+            result = sdbi.get_tree(samples, clusters, args['method'], args['ref'], args['refname'])
 
             print result
 
