@@ -294,10 +294,10 @@ def make_known_outlier(cur, sample_id, snad, distances):
             return 1
         row = cur.fetchone()
 
-        # when deleting the last member of this cluster there is no need to update anything, just get rid of it
+        # when deleting the last member of this cluster there is no need to update anything
         if row['nof_members'] <= 1:
-            logging.debug("This is the last member of cluster %s on level %s. Deleting cluster stats.", clu, t_lvl)
-            sql = "DELETE FROM cluster_stats WHERE cluster_level=%s AND cluster_name=%s"
+            logging.debug("This is the last member of cluster %s on level %s. Cluster now has 0 members.", clu, t_lvl)
+            sql = "UPDATE cluster_stats SET (nof_members, nof_pairwise_dists, mean_pwise_dist, stddev) = (0, 0, null, null) WHERE cluster_level=%s AND cluster_name=%s"
             cur.execute(sql, (t_lvl, clu, ))
             continue
 

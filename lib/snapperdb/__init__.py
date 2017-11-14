@@ -191,8 +191,8 @@ def check_zscores(cur, distances, new_snad, merges, levels=[0, 5, 10, 25, 50, 10
             oStats = ClusterStats(members=merges[lvl].stats.members, stddev=merges[lvl].stats.stddev_pw_dist, mean=merges[lvl].stats.mean_pw_dist)
 
         else:
-            if nof_mems == 1:
-                logging.info("Cluster %s at level %s has only one member. Skipping zscore check.", clu, t_lvl)
+            if nof_mems <= 1:
+                logging.info("Cluster %s at level %s has only 1 or 0 member(s). Skipping zscore check.", clu, t_lvl)
                 continue
 
             # if there is no merge we can just take the stats as stored in the db
