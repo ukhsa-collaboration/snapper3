@@ -10,7 +10,7 @@ from argparse import RawTextHelpFormatter
 import psycopg2
 from psycopg2.extras import DictCursor
 
-from lib.utils import get_the_data_from_the_input
+from lib.utils import get_the_data_from_the_input, calculate_nless_n50
 
 # --------------------------------------------------------------------------------------------------
 
@@ -98,12 +98,20 @@ REQUIRED when format is fasta, else ignored.""")
                       metavar="FLOAT",
                       default=None,
                       dest="mcov",
-                      help="""Minimum coverage required to aloow sample in database. Only applicable with json
+                      help="""Minimum coverage required to allow sample in database. Only applicable with json
 format, ignored for fasta.  This will check for the coverageMetaData annotation calculated by Phenix
 and only allow the sample in, if the mean coverage is >= this value.
 [default: do not check this]""")
 
-
+    args.add_argument("--min-nless-n50",
+                      type=int,
+                      metavar="INT",
+                      default=None,
+                      dest="nless",
+                      help="""Minimum N50 of N-less sequence required to allow sample in database. This will check
+for the nlessnessMetaData annotation calculated by Phenix and only allow the sample in, if the n50 is >= this value.
+If adding the sample from fasta it will be calculated on the fly. If adding from json and annotation is absent => error.
+[default: do not check this]""")
 
     return args
 
@@ -131,13 +139,32 @@ def main(args):
         logging.error("An error occured getting the data from the input.")
         return 1
 
-    if args['format'] == 'json' and args['mcov'] != None:
-        if data['annotations'].has_key('coverageMetaData') == False:
-            logging.error("Was asked to check coverage but no coverage annotation found in json file.")
-            return 1
-        cov_info = dict(item.split("=") for item in data['annotations']['coverageMetaData'].split(","))
-        logging.info("The mean coverage for this sample is: %s", cov_info['mean'])
-        if float(cov_info['mean']) < args['mcov']:
+    # if format is json, check if there are any annotations to check and check them
+    if args['format'] == 'json':
+        if args['mcov'] != None:
+            if data['annotations'].has_key('coverageMetaData') == False:
+                logging.error("Was asked to check coverage but no coverage annotation found in json file.")
+                return 1
+            cov_info = dict(item.split("=") for item in data['annotations']['coverageMetaData'].split(","))
+            logging.info("The mean coverage for this sample is: %s", cov_info['mean'])
+            if float(cov_info['mean']) < args['mcov']:
+                logging.error("The mean coverage for this sample is below the user specified threshold.")
+                return 1
+        if args['nless'] != None:
+            if data['annotations'].has_key('nlessnessMetaData') == False:
+                logging.error("Was asked to check nlessness but no nlessness annotation found in json file.")
+                return 1
+            nless_info = dict(item.split("=") for item in data['annotations']['nlessnessMetaData'].split(","))
+            logging.info("The N-less N50 for this sample is: %s", nless_info['n50'])
+            if int(nless_info['n50']) < args['nless']:
+                logging.error("The N-less N50 for this sample is below the user specified threshold.")
+                return 1
+
+    # calculate nless annotation for fasta input if required
+    if args['format'] == 'fasta' and args['nless'] != None:
+        n50 = calculate_nless_n50(data, args['reference'])
+        logging.info("The N-less N50 for this sample is: %s", n50)
+        if n50 < args['nless']:
             logging.error("The mean coverage for this sample is below the user specified threshold.")
             return 1
 

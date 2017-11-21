@@ -17,6 +17,7 @@ import remove_sample
 import get_closest
 import export_sample_variants
 import get_history
+import make_tree
 
 # -------------------------------------------------------------------------------------------------
 
@@ -128,6 +129,13 @@ def get_args():
                           formatter_class=RawTextHelpFormatter,
                           add_help=False)
 
+    subparsers.add_parser("make_tree",
+                          description=make_tree.get_desc(),
+                          help="Make a phylogenetic tree for a group of samples.",
+                          parents=[make_tree.get_args()],
+                          formatter_class=RawTextHelpFormatter,
+                          add_help=False)
+
     return args
 
 # -------------------------------------------------------------------------------------------------
@@ -172,6 +180,8 @@ def main():
         return add_reference.main(args)
     elif args["cmd"] == "get_history":
         return get_history.main(args)
+    elif args["cmd"] == "make_tree":
+        return make_tree.main(args)
     return 1
 
 # -------------------------------------------------------------------------------------------------
