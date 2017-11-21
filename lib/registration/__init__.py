@@ -89,7 +89,11 @@ def register_sample(cur, sample_id, distances, new_snad, zscore_ignore, levels=[
                 sql  = "UPDATE cluster_stats SET (nof_members, nof_pairwise_dists, mean_pwise_dist, stddev) = (%s, %s, %s, %s) WHERE cluster_name=%s AND cluster_level=%s"
                 cur.execute(sql, (oStats.members, oStats.nof_pw_dists, oStats.mean_pw_dist, oStats.stddev_pw_dist, cluster, t_lvl, ))
 
-                means[lvl] = sum(dis_to_cu_mems) / float(len(dis_to_cu_mems))
+                try:
+                    means[lvl] = sum(dis_to_cu_mems) / float(len(dis_to_cu_mems))
+                except ZeroDivisionError:
+                    logging.debug("Added a member to a previously outlier-only %s cluster %s.", t_lvl, cluster)
+                    means[lvl] = None
 
                 # update the stats of all other members of the cluster
                 for o_mem in current_members:

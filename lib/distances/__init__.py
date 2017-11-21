@@ -147,3 +147,67 @@ def get_distances(cur, samid, others):
     return d
 
 # --------------------------------------------------------------------------------------------------
+
+def get_distance_matrix(cur, samids):
+    """
+    Get a distance matrix for the given samples.
+
+    Parameters
+    ----------
+    cur: obj
+        database cursor
+    samids: int
+        list of sample pk_ids
+
+    Returns
+    -------
+    dist: dict
+        complete matrix
+        dist[s1][s2] = d
+        dist[s2][s1] = d
+    """
+
+    # get list of contig ids from database
+    sql = "SELECT pk_id FROM contigs"
+    cur.execute(sql)
+    rows = cur.fetchall()
+    contig_ids = [r['pk_id'] for r in rows]
+
+    samids = set(samids)
+    done = set()
+    dists = {}
+
+    for s in samids:
+
+        try:
+            dists[s][s] = 0
+        except KeyError:
+            dists[s] = {s: 0}
+
+        # note the ones that are already done, so nothing is calculated twice.
+        done.add(s)
+        oths = samids.difference(done)
+
+        d = {}
+        for cid in contig_ids:
+
+            cur.callproc("get_sample_distances_by_id", [s, cid, list(oths)])
+            result = cur.fetchall()
+
+            for res in result:
+                if res[2] == None:
+                    res[2] = 0
+                try:
+                    d[res[0]] += res[2]
+                except KeyError:
+                    d[res[0]] = res[2]
+        for osam, snpdi in d.items():
+            dists[s][osam] = snpdi
+            try:
+                dists[osam][s] = snpdi
+            except KeyError:
+                dists[osam] = {s: snpdi}
+
+    return dists
+
+# --------------------------------------------------------------------------------------------------

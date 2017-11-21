@@ -124,7 +124,7 @@ def get_new_snp_address(nbhood, levels=[0, 5, 10, 25, 50, 100, 250]):
 
 # --------------------------------------------------------------------------------------------------
 
-def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25, 50, 100, 250]):
+def check_zscores(cur, distances, new_snad, merges, levels=[0, 5, 10, 25, 50, 100, 250]):
     """
     Check the zscores of putting a new sample in the clusters proposed, considering merges.
 
@@ -137,11 +137,6 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
         e.g. [(298, 0), (37, 3), (55, 4)]
     new_snad: list
         [t0 or None, t5 or None, t10, t25, t50, t100, t250]
-    nbhood: dict
-        {'closest_distance': int,
-         'nearest_t': int,
-         'closest_sample': int,
-         'closest_snad': [list of 7 ints]}
     merges: dict
         {lvl: ClusterMerge object}
 
@@ -194,8 +189,8 @@ def check_zscores(cur, distances, new_snad, nbhood, merges, levels=[0, 5, 10, 25
             oStats = ClusterStats(members=merges[lvl].stats.members, stddev=merges[lvl].stats.stddev_pw_dist, mean=merges[lvl].stats.mean_pw_dist)
 
         else:
-            if nof_mems == 1:
-                logging.info("Cluster %s at level %s has only one member. Skipping zscore check.", clu, t_lvl)
+            if nof_mems <= 1:
+                logging.info("Cluster %s at level %s has only 1 or 0 member(s). Skipping zscore check.", clu, t_lvl)
                 continue
 
             # if there is no merge we can just take the stats as stored in the db

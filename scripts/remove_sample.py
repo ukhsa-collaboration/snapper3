@@ -9,6 +9,8 @@ from lib.distances import get_distances, get_all_pw_dists
 from lib.ClusterStats import ClusterStats
 from lib.utils import get_all_cluster_members
 
+from datetime import datetime
+
 # --------------------------------------------------------------------------------------------------
 
 def get_desc():
@@ -64,12 +66,21 @@ def get_args():
                       dest="sample",
                       help="Name of sample to remove. REQUIRED.")
 
-    args.add_argument("--just-ignore",
-                      action='store_true',
-                      help="""Sample and variant information will be retained in database,
+    grp = args.add_mutually_exclusive_group()
+    grp.add_argument("--just-ignore",
+                     action='store_true',
+                     help="""Sample and variant information will be retained in database,
 but clustering information will be removed. Ignore_sample will
 be set to TRUE. [DEFAULT: Remove everything. Sample can be added
 and clustered again later.]""")
+
+    grp.add_argument("--known-outlier",
+                     action='store_true',
+                     help="""Sample, variant, and clustering information will be retained in database,
+but cluster stats will be reverted. ignore_zscore will
+be set to TRUE. [DEFAULT: Remove everything. Sample can be added
+and clustered again later.]""")
+
 
     return args
 
@@ -107,12 +118,15 @@ def main(args):
         igno_flag = row['ignore_sample']
         zscr_flag = row['ignore_zscore']
 
-        # is this sample is already ignored
+        # this sample is already ignored
         if igno_flag == True:
             logging.info("This sample is already ignored.")
             if args['just_ignore'] == True:
                 logging.info("You chose not to remove it completely.")
                 return 0
+            elif args['known_outlier'] == True:
+                logging.error("This sample is not clustered, so can't be made an outlier.")
+                return 1
             else:
                 drop_sample(cur, sample_id)
                 conn.commit()
@@ -130,11 +144,13 @@ def main(args):
                 sql = "UPDATE samples SET ignore_sample=True WHERE pk_id=%s"
                 cur.execute(sql, (sample_id, ))
                 logging.info("Sample is now ignored.")
+            elif args['known_outlier'] == True:
+                logging.error("A sample not clustered cannot be a 'known outlier'. Please select to ignore or remove the sample.")
+                return 1
             else:
                 drop_sample(cur, sample_id)
             conn.commit()
             return 0
-
         row = cur.fetchone()
         snad = [row['t0'], row['t5'], row['t10'], row['t25'], row['t50'], row['t100'], row['t250']]
 
@@ -142,50 +158,77 @@ def main(args):
         # always keep distances[a][b] = d and distances[b][a] = d both
         distances = {}
 
-        logging.info("Checking if any clusters need splitting after sample removal.")
-        splits = check_cluster_integrity(cur, sample_id, snad, distances)
-        logging.info("Clusters that need splitting after sample removal: %s", splits)
+        # this sample is a know outlier
+        if zscr_flag == True:
+            logging.info("This sample is a known outlier.")
+            if args['just_ignore'] == True:
 
-        # splits structure
-        # splits[level] = [(c, a, b), ...] <- a abnd b are samples that are no longer connected the cluster
-        # c after the removee has been removed
-        # splits[level] = None <- at this level the cluster is file
+                if update_clustering(cur, sample_id, snad, distances, zscr_flag) != 0:
+                    logging.error("Error in update clustering.")
+                    return 1
 
-        # if the sample was previously included in the stats or there are any splits on any level
-        # we need to (do the splitting and) update the stats
-        if zscr_flag == False or any([x != None for x in splits.values()]):
-            # get all 250 members and calculate distances to them
-            sql = "SELECT c.fk_sample_id AS samid FROM sample_clusters c, samples s WHERE c.t250=%s AND c.fk_sample_id=s.pk_id AND s.ignore_zscore IS FALSE"
-            cur.execute(sql, (row['t250'], ))
-            t250_members = [r['samid'] for r in cur.fetchall()]
-            try:
-                t250_members.remove(sample_id)
-            except ValueError:
-                logging.error("Bizzare data inconsistency for sample id %s and t250 cluster %s.", sample_id, row['t250'])
-                return 1
+                logging.info("Removing the sample from the sample_clusters and sample_history table.")
+                sql = "DELETE FROM sample_clusters WHERE fk_sample_id=%s"
+                cur.execute(sql, (sample_id, ))
+                sql = "DELETE FROM sample_history WHERE fk_sample_id=%s"
+                cur.execute(sql, (sample_id, ))
+                sql = "UPDATE samples SET (ignore_sample, ignore_zscore) = (True, False) WHERE pk_id=%s"
+                cur.execute(sql, (sample_id, ))
+                logging.info("Sample is now ignored.")
+                conn.commit()
+            elif args['known_outlier'] == True:
+                logging.info("So there is nothing to do.")
+            else:
 
-            logging.info("Calculating %i distances to update stats.", len(t250_members))
-            # get the distances and remember them in the dict
-            # we need them anyway, so we store them in the dict
-            _ = get_distances_from_memory(cur, distances, sample_id, t250_members)
+                if update_clustering(cur, sample_id, snad, distances, zscr_flag) != 0:
+                    logging.error("Error in update clustering.")
+                    return 1
 
-            # update all stats in all clusters on all levels
-            for clu, lvl in zip(snad, [0, 5, 10, 25, 50, 100, 250]):
-                if update_cluster_stats_post_removal(cur, sample_id, clu, lvl, distances, splits[lvl], zscr_flag) == None:
-                    logging.error("Problem with updating cluster stats.")
-                    return None
-        else:
-            logging.info("This sample previously failed the zscore check and is not considered in stats. Skipping stats update.")
+                logging.info("Removing the sample from the sample_clusters and sample_history table.")
+                sql = "DELETE FROM sample_clusters WHERE fk_sample_id=%s"
+                cur.execute(sql, (sample_id, ))
+                sql = "DELETE FROM sample_history WHERE fk_sample_id=%s"
+                cur.execute(sql, (sample_id, ))
+                drop_sample(cur, sample_id)
+                conn.commit()
+            return 0
 
-        # now remove the sample
-        sql = "DELETE FROM sample_clusters WHERE fk_sample_id=%s"
-        cur.execute(sql, (sample_id, ))
+        # ---------------------------------------------------------
+        # if we get to here we know the sample is 'fully clustered'
+        # ---------------------------------------------------------
 
         if args['just_ignore'] == True:
+
+            if update_clustering(cur, sample_id, snad, distances, zscr_flag) != 0:
+                logging.error("Error in update clustering.")
+                return 1
+
+            # now remove the sample
+            logging.info("Removing the sample from the sample_clusters and sample_history table.")
+            sql = "DELETE FROM sample_clusters WHERE fk_sample_id=%s"
+            cur.execute(sql, (sample_id, ))
+            sql = "DELETE FROM sample_history WHERE fk_sample_id=%s"
+            cur.execute(sql, (sample_id, ))
             logging.info("You chose not to remove the sample completely.")
             sql = "UPDATE samples SET ignore_sample=True WHERE pk_id=%s"
             cur.execute(sql, (sample_id, ))
+
+        elif args['known_outlier'] == True:
+            if make_known_outlier(cur, sample_id, snad, distances) != 0:
+                logging.error("Error in update clustering.")
+                return 1
+            logging.info("Sample successfully turned into a known outlier.")
         else:
+            if update_clustering(cur, sample_id, snad, distances, zscr_flag) != 0:
+                logging.error("Error in update clustering.")
+                return 1
+
+            # now remove the sample
+            logging.info("Removing the sample from the sample_clusters and sample_history table.")
+            sql = "DELETE FROM sample_clusters WHERE fk_sample_id=%s"
+            cur.execute(sql, (sample_id, ))
+            sql = "DELETE FROM sample_history WHERE fk_sample_id=%s"
+            cur.execute(sql, (sample_id, ))
             drop_sample(cur, sample_id)
 
         conn.commit()
@@ -201,6 +244,162 @@ def main(args):
     return 0
 
 # end of main --------------------------------------------------------------------------------------
+
+def make_known_outlier(cur, sample_id, snad, distances):
+    """
+    Turns a sample from a fully cluster one to a 'known outlier'. This involves now splitting since
+    the sample is kept in the cluster. Stats for the clusters this sample is in need to be updated.
+
+    Parameters
+    ----------
+    cur: obj
+        database cursor
+    sample_id: int
+        id of sample to remove
+    snad: list
+        [t0, t5, ..., t250]
+    distances: dist
+        distances[a][b] = d
+        distances[b][a] = d
+
+    Returns
+    -------
+    1 on error, 0 on success
+
+    """
+
+    # get all 250 members and calculate distances to them
+    sql = "SELECT c.fk_sample_id AS samid FROM sample_clusters c, samples s WHERE c.t250=%s AND c.fk_sample_id=s.pk_id AND s.ignore_zscore IS FALSE"
+    cur.execute(sql, (snad[6], ))
+    t250_members = [r['samid'] for r in cur.fetchall()]
+    try:
+        t250_members.remove(sample_id)
+    except ValueError:
+        logging.error("Bizzare data inconsistency for sample id %s and t250 cluster %s.", sample_id, snad[6])
+        return  1
+
+    logging.info("Calculating %i distances to update stats.", len(t250_members))
+    # get the distances and remember them in the dict
+    # we need them anyway, so we store them in the dict
+    _ = get_distances_from_memory(cur, distances, sample_id, t250_members)
+
+    for clu, lvl in zip(snad, [0, 5, 10, 25, 50, 100, 250]):
+        t_lvl = "t%s" % (lvl)
+
+        # get stats for this cluster
+        sql = "SELECT nof_members, nof_pairwise_dists, mean_pwise_dist, stddev FROM cluster_stats WHERE cluster_level=%s AND cluster_name=%s"
+        cur.execute(sql, (t_lvl, clu, ))
+        if cur.rowcount == 0:
+            logging.error("Cluster stats for level %s and cluster %s not found.", t_lvl, clu)
+            return 1
+        row = cur.fetchone()
+
+        # when deleting the last member of this cluster there is no need to update anything
+        if row['nof_members'] <= 1:
+            logging.debug("This is the last member of cluster %s on level %s. Cluster now has 0 members.", clu, t_lvl)
+            sql = "UPDATE cluster_stats SET (nof_members, nof_pairwise_dists, mean_pwise_dist, stddev) = (0, 0, null, null) WHERE cluster_level=%s AND cluster_name=%s"
+            cur.execute(sql, (t_lvl, clu, ))
+            continue
+
+        # create cluster stats object from the information in the database
+        oStats = ClusterStats(members=row['nof_members'], stddev=row['stddev'], mean=row['mean_pwise_dist'])
+
+        # get other members of this cluster, we know it must be at least one
+        sql = "SELECT c.fk_sample_id AS samid FROM sample_clusters c, samples s WHERE c."+t_lvl+"=%s AND c.fk_sample_id=s.pk_id AND s.ignore_zscore IS FALSE"
+        cur.execute(sql, (clu, ))
+        members = [r['samid'] for r in cur.fetchall()]
+        try:
+            members.remove(sample_id)
+        except ValueError:
+            logging.error("Bizzare data inconsistency for sample id %s and %s cluster %s.", sample_id, t_lvl, clu)
+            return 1
+
+        this_di = [distances[sample_id][m] for m in members]
+        assert oStats.members == (len(this_di) + 1)
+        oStats.remove_member(this_di)
+
+        # update the cluster stats in the database with the info from the object
+        sql = "UPDATE cluster_stats SET (nof_members, nof_pairwise_dists, mean_pwise_dist, stddev) = (%s, %s, %s, %s) WHERE cluster_level=%s AND cluster_name=%s"
+        cur.execute(sql, (oStats.members, oStats.nof_pw_dists, oStats.mean_pw_dist, oStats.stddev_pw_dist, t_lvl, clu, ))
+
+    # for known outliers the mean distances to all other samples in the clusters are not kept
+    sql = "UPDATE sample_clusters SET (t0_mean, t5_mean, t10_mean, t25_mean, t50_mean, t100_mean, t250_mean) = (null, null, null, null, null, null, null) WHERE fk_sample_id=%s"
+    cur.execute(sql, (sample_id, ))
+
+    # set the flag
+    sql = "UPDATE samples SET ignore_zscore=True WHERE pk_id=%s"
+    cur.execute(sql, (sample_id, ))
+
+    return 0
+
+# --------------------------------------------------------------------------------------------------
+
+def update_clustering(cur, sample_id, snad, distances, zscr_flag):
+    """
+    Update the sample clustering. Check for splits.
+
+    Parameters
+    ----------
+    cur: obj
+        database cursor
+    sample_id: int
+        id of sample to remove
+    snad: list
+        [t0, t5, ..., t250]
+    distances: dist
+        distances[a][b] = d
+        distances[b][a] = d
+    zscr_flag: boolean
+        True: sample is 'known outlier', False: sample is 'fully clustered'
+
+    Returns
+    -------
+    1 on error, 0 on success
+
+    """
+
+    logging.info("Checking if any clusters need splitting after sample removal.")
+    splits = check_cluster_integrity(cur, sample_id, snad, distances)
+    logging.info("Clusters that need splitting after sample removal: %s", splits)
+
+    # splits structure:
+    # splits[level] = [(c, a, b), ...] <- a and b are samples that are no longer connected the
+    # cluster c after the removee has been removed
+    # splits[level] = None <- at this level the cluster is fine
+
+    # if the sample was previously included in the stats or there are any splits on any level
+    # we need to (do the splitting and) update the stats
+    if zscr_flag == False or any([x != None for x in splits.values()]):
+        # get all 250 members and calculate distances to them
+        sql = "SELECT c.fk_sample_id AS samid FROM sample_clusters c, samples s WHERE c.t250=%s AND c.fk_sample_id=s.pk_id AND s.ignore_zscore IS FALSE"
+        cur.execute(sql, (snad[6], ))
+        t250_members = [r['samid'] for r in cur.fetchall()]
+        try:
+            logging.debug("Removing %s from list: %s", sample_id, t250_members)
+            t250_members.remove(sample_id)
+        except ValueError:
+            if zscr_flag == True:
+                logging.debug("Could not find %s as a member of t250 cluster %s, but it's OK because it's a known outlier.", sample_id, snad[6])
+            else:
+                logging.error("Bizzare data inconsistency for sample id %s and t250 cluster %s.", sample_id, snad[6])
+                return 1
+
+        logging.info("Calculating %i distances to update stats.", len(t250_members))
+        # get the distances and remember them in the dict
+        # we need them anyway, so we store them in the dict
+        _ = get_distances_from_memory(cur, distances, sample_id, t250_members)
+
+        # update all stats in all clusters on all levels
+        for clu, lvl in zip(snad, [0, 5, 10, 25, 50, 100, 250]):
+            if update_cluster_stats_post_removal(cur, sample_id, clu, lvl, distances, splits[lvl], zscr_flag) == None:
+                logging.error("Problem with updating cluster stats.")
+                return 1
+    else:
+        logging.info("No stats update required for this sample.")
+
+    return 0
+
+# --------------------------------------------------------------------------------------------------
 
 def split_clusters(cur, sample_id, problems, lvl, distances):
     """
@@ -227,12 +426,16 @@ def split_clusters(cur, sample_id, problems, lvl, distances):
     """
 
     groups = {}
+    visited = set()
     for (c, a, b) in problems:
         mems = get_all_cluster_members(cur, c, 't'+str(lvl))
         for node in [a,b]:
-            try:
-                _ = groups[node]
-            except KeyError:
+            # get a set of all samples that are already in one of the groups
+            _ = [visited.update(x) for x in groups.values()]
+            # if we already expanded from that node or went past it in a previous group, don't go
+            if groups.has_key(node) or (node in visited):
+                continue
+            else:
                 groups[node] = expand_from_node(cur, node, c, lvl, distances, sample_id)
 
         # if the combined langth of all groups covers the whole cluster (without the removee), we're done
@@ -268,9 +471,6 @@ def update_cluster_stats_post_removal(cur, sid, clu, lvl, distances, split, zscr
     None if fail
     """
 
-    # Yes, in case this is a zscore_ignore sample and there is a split to be done, but not on this level,
-    # this method will take stuff out of the database, do nothing to them and put them back in. I know.
-
     t_lvl = "t%i" % (lvl)
 
     logging.info("Updating stats for cluster %s on level %s.", clu, t_lvl)
@@ -279,8 +479,12 @@ def update_cluster_stats_post_removal(cur, sid, clu, lvl, distances, split, zscr
     sql = "SELECT nof_members, mean_pwise_dist, stddev FROM cluster_stats WHERE cluster_level=%s AND cluster_name=%s"
     cur.execute(sql, (t_lvl, clu, ))
     if cur.rowcount == 0:
-        logging.error("Cluster stats for level %s and cluster %s not found.", t_lvl, clu)
-        return None
+         if zscr_flag == True:
+            logging.info("Sample is a known outlier and the only member of level %s cluster %s. So there are no stats to update.", t_lvl, clu)
+            return 0
+         else:
+            logging.error("Cluster stats for level %s and cluster %s not found.", t_lvl, clu)
+            return None
     row = cur.fetchone()
 
     # when deleting the last member of this cluster there is no need to update anything, just get rid of it
@@ -297,11 +501,17 @@ def update_cluster_stats_post_removal(cur, sid, clu, lvl, distances, split, zscr
     sql = "SELECT c.fk_sample_id AS samid FROM sample_clusters c, samples s WHERE c."+t_lvl+"=%s AND c.fk_sample_id=s.pk_id AND s.ignore_zscore IS FALSE"
     cur.execute(sql, (clu, ))
     members = [r['samid'] for r in cur.fetchall()]
+    logging.debug("Got the follwoing members: %s", members)
     try:
+        logging.debug("Removing %s from list: %s", sid, members)
         members.remove(sid)
     except ValueError:
-        logging.error("Bizzare data inconsistency for sample id %s and %s cluster %s.", sid, t_lvl, clu)
-        return None
+        if zscr_flag == True:
+            logging.debug("Could not find %s as a member of %s cluster %s, but it's OK because it's a known outlier.",
+                          sid, t_lvl, clu)
+        else:
+            logging.error("Bizzare data inconsistency for sample id %s and %s cluster %s.", sid, t_lvl, clu)
+            return None
 
     # if the was previously ignore do not remove it from stats object, because it was never considered when calculating the stats
     if zscr_flag == False:
@@ -319,28 +529,39 @@ def update_cluster_stats_post_removal(cur, sid, clu, lvl, distances, split, zscr
     if split != None:
         logging.info("Cluster %s need to be split.", clu)
         groups = split_clusters(cur, sid, split, lvl, distances)
-        logging.debug("It will be split into these subclusters: ", groups)
+        logging.debug("It will be split into these subclusters: %s", groups)
 
         # groups[a] = [1,2,3]
         # groups[b] = [4,5,6]
 
+        knwntlrs = set()
+
         # put the largest subcluster at the front of the list of subclusters
         group_lists = sorted(groups.values(), key=len, reverse=True)
+        logging.debug("These are the group lists: %s", group_lists)
         # for the largest group
         for grli in group_lists[1:]:
             # for all members of this group
+            logging.debug("Current group list: %s", grli)
             for m in grli:
                 # remove from members, from stats object and remember that you removed it in that list
-                members.remove(m)
-                this_di = [d for (s, d) in get_distances_from_memory(cur, distances, m, members)]
-                assert oStats.members == (len(this_di) + 1)
-                # i.e. turn the oStats object into the stats object for the largest cluster after the split
-                oStats.remove_member(this_di)
-                removed_members.append(m)
+                logging.debug("Removing %s from %s", m, members)
+                if m in members:
+                    members.remove(m)
+                    this_di = [d for (s, d) in get_distances_from_memory(cur, distances, m, members)]
+                    assert oStats.members == (len(this_di) + 1)
+                    # i.e. turn the oStats object into the stats object for the largest cluster after the split
+                    oStats.remove_member(this_di)
+                    removed_members.append(m)
+                else:
+                    knwntlrs.add(m)
+                    logging.debug("Could not remove %s from members, but it's probably a kown outlier.")
 
         # for the other subclustrs
         for grli in group_lists[1:]:
             # make a new stats object based on the list of members and all pw distances between them
+            # remove known outliers previously encountered from consideration
+            grli = list(set(grli).difference(knwntlrs))
             all_pw_grdi = get_all_pw_dists(cur, grli)
             oStatsTwo = ClusterStats(members=len(grli), dists=all_pw_grdi)
             sql = "SELECT max("+t_lvl+") AS m FROM sample_clusters"
@@ -349,6 +570,10 @@ def update_cluster_stats_post_removal(cur, sid, clu, lvl, distances, split, zscr
             new_clu_name = row['m'] + 1
             sql = "INSERT INTO cluster_stats (cluster_level, cluster_name, nof_members, nof_pairwise_dists, mean_pwise_dist, stddev) VALUES (%s, %s, %s, %s, %s, %s)"
             cur.execute(sql, (t_lvl, new_clu_name, oStatsTwo.members, oStatsTwo.nof_pw_dists, oStatsTwo.mean_pw_dist, oStatsTwo.stddev_pw_dist, ))
+
+            # document the upcoming change in the sample history
+            update_sample_history(cur, t_lvl, new_clu_name, grli)
+
             # put all members of this subcluster in the new cluster in the database
             sql = "UPDATE sample_clusters SET "+t_lvl+"=%s WHERE fk_sample_id IN %s"
             cur.execute(sql, (new_clu_name, tuple(grli), ))
@@ -357,7 +582,7 @@ def update_cluster_stats_post_removal(cur, sid, clu, lvl, distances, split, zscr
             # created subcluster and update in the database
             for nm in grli:
                 targets = [x for x in grli if x != nm]
-                alldis = get_distances_from_memory(cur, distances, nm, targets)
+                alldis = [di for (sa, di) in get_distances_from_memory(cur, distances, nm, targets)]
                 try:
                     mean = sum(alldis) / float(len(alldis))
                 except ZeroDivisionError:
@@ -478,7 +703,7 @@ def check_cluster_integrity(cur, sample_id, snad, distances, levels=[0, 5, 10, 2
                 connected_mems.append(sa)
             remember_distance(distances, sample_id, sa, di)
 
-        logging.debug("Samples connected via removee: %s", connected_mems)
+        logging.debug("Samples connected via removee: %s", sorted(connected_mems))
 
         # investigate all pw distances between connected members
         potentially_broken_pairs = []
@@ -548,7 +773,7 @@ def check_cluster_integrity(cur, sample_id, snad, distances, levels=[0, 5, 10, 2
                 # we want to know for updating later
 
         # we checked all pairs and always found b somehow, cluster is fine
-        if broken == False:
+        if splits.has_key(lvl) == False:
             splits[lvl] = None
 
     return splits
@@ -594,6 +819,7 @@ def get_distances_from_memory(cur, distances, a, targets):
             remember_distance(distances, a, sa, di)
         result += d
 
+    result = sorted(result, key=lambda x: x[1])
     return result
 
 # --------------------------------------------------------------------------------------------------
@@ -683,6 +909,49 @@ def expand_from_node(cur, a, c, lvl, distances, sample_id=None):
     logging.info("Samples connected to sample %s: %s.", a, with_a)
 
     return with_a
+
+# --------------------------------------------------------------------------------------------------
+
+def update_sample_history(cur, lvl_in, new_clu_name, grli):
+    """
+    When changing a snp address because the cluster was split, this need to go into sample_history.
+
+    Parameters
+    ----------
+    cur: obj
+        database cursor
+    t_lvl:
+        level where snp address changed, e.g. 't100'
+    new_clu_name:
+        the new cluster name at this level
+    grli:
+        list of sampleids for which this change is effective
+
+    Returns
+    -------
+    0
+    """
+
+    levels = ['t0', 't5', 't10', 't25', 't50', 't100', 't250']
+
+    for samid in grli:
+
+        sql = "SELECT t0, t5, t10, t25, t50, t100, t250 FROM sample_clusters WHERE fk_sample_id=%s"
+        cur.execute(sql, (samid, ))
+        oldsnad = cur.fetchone()
+
+        # one line conditional dictionary comprehension
+        newsnad = {lvl: oldsnad[lvl] if lvl != lvl_in else new_clu_name for lvl in levels}
+
+        sql = "INSERT INTO sample_history (fk_sample_id, t250_old, t100_old, t50_old, t25_old, t10_old, t5_old, t0_old, t250_new, t100_new, t50_new, t25_new, t10_new, t5_new, t0_new, renamed_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+        cur.execute(sql, (samid,
+                          oldsnad['t250'], oldsnad['t100'], oldsnad['t50'], oldsnad['t25'],
+                          oldsnad['t10'], oldsnad['t5'], oldsnad['t0'],
+                          newsnad['t250'], newsnad['t100'], newsnad['t50'], newsnad['t25'],
+                          newsnad['t10'], newsnad['t5'], newsnad['t0'],
+                          datetime.now()))
+
+    return 0
 
 # --------------------------------------------------------------------------------------------------
 
