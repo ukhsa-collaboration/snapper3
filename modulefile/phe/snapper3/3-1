@@ -23,8 +23,7 @@ module-whatis "loads the $name environment"
 
 prepend-path PATH           $modroot/scripts
 prepend-path PYTHONPATH           $modroot
-
-
+prepend-path PYTHONPATH           $modroot/scripts
 
 module load python/2.7.6
 module load psycopg2/python2.7.6/2.5.2
