@@ -6,8 +6,6 @@ author: ulf.schaefer@phe.gov.uk
 """
 
 import logging
-import math
-import operator
 
 from lib.utils import get_closest_threshold
 from lib.ClusterStats import ClusterStats
@@ -213,10 +211,22 @@ def check_zscores(cur, distances, new_snad, merges, levels=[0, 5, 10, 25, 50, 10
             logging.info("All distances in cluster %s on level %s are identical. Skipping zscore check.", clu, t_lvl)
             continue
 
-        means = {'new_mem': avg_dis}
+        # calculate zscore
+        mean_all_dist_in_c = oStats.mean_pw_dist
+        zscr = (avg_dis - mean_all_dist_in_c) / oStats.stddev_pw_dist
+
+        mess = "z-score of new sample to cluster %s on level %s: %s" % (clu, t_lvl, zscr)
+        logging.debug(mess)
+
+        if zscr <= -1.5:
+            fail = True
+            info.append(mess)
+
+        # do this for all members of the cluster
         nof_mems = len(current_mems)
         merge_per_sample_stats = {}
         for c_mem in current_mems:
+
             # get the mean distance of this sample to all other samples in the cluster (w/o the one to be added)
             old_medis = None
             if merges.has_key(lvl) == True:
@@ -240,29 +250,15 @@ def check_zscores(cur, distances, new_snad, merges, levels=[0, 5, 10, 25, 50, 10
             # nof_mems is the number of members w/o the sample that we want to add to the cluster
             # update the mean distance with the new distance and calculate the z-score
             new_medis = ((old_medis * (nof_mems - 1)) + new_dist ) / float(nof_mems)
-            means[c_mem] = new_medis
 
-        mean_of_means = sum(means.values()) / float(len(means))
+            zscr = (new_medis - mean_all_dist_in_c) / oStats.stddev_pw_dist
 
-        #calculate variance and stddev
-        x = []
-        for d in means.values():
-            x.append((d - mean_of_means)**2.0)
-
-        variance_of_means = sum(x)/len(x)
-        stddev_of_means = math.sqrt(variance_of_means)
-
-        # calculate zscore
-        for k, v in means.items():
-            zscr = (v - mean_of_means) / stddev_of_means
-            mess = "z-score of sample %s to cluster %s on level %s incl new member: %s" % (str(k), clu, t_lvl, zscr)
+            mess = "z-score of sample %s to cluster %s on level %s incl new member: %s" % (c_mem, clu, t_lvl, zscr)
             logging.debug(mess)
 
             if zscr <= -1.5:
                 fail = True
                 info.append(mess)
-                mean_mess = "\n".join(["%s:\t%s" % (x[0], x[1]) for x in sorted(means.items(), key=operator.itemgetter(1))])
-                info.append("zscores where calculated on the following means:\n%s" % (str(mean_mess)))
 
         # if there was a merge we want to remember that we already calculated all this stuff
         if merges.has_key(lvl) == True:
