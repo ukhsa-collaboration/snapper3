@@ -360,7 +360,7 @@ class SnapperDBInterrogation(object):
 
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-    def get_tree(self, samples, clusters, method, ref=None, refname=None):
+    def get_tree(self, samples, clusters, method, **kwargs):
         """
         Build a tree for a given set of samples with a given method.
 
@@ -408,24 +408,28 @@ class SnapperDBInterrogation(object):
 
         nofsams = len(treesams.keys())
         if nofsams < 3:
-            raise SnapperDBInterrogationError("At least 3 samples are required to make a tree. Only %i found.", nofsams)
+            raise SnapperDBInterrogationError("At least 3 samples are required to make a tree. Only %i found." % nofsams)
+        elif nofsams > 400:
+            raise SnapperDBInterrogationError("This tree would contain %i samples. A maximum of 400 is permitted. Please select a more targeted subset." % nofsams)
+        else:
+            pass
 
         logging.info("Calculating %s tree for %i samples.", method, nofsams)
 
         if method == 'NJ':
             if HAVE_BIOPYTHON == False:
                 raise SnapperDBInterrogationError("You need to have Biopython for making NJ trees.")
-            return self._make_nj_tree(treesams)
+            return self._make_nj_tree(treesams, kwargs['dm'])
         elif method == 'ML':
             if self._can_we_make_an_ml_tree() == False:
                 raise SnapperDBInterrogationError("You need to have FastTree for making ML trees.")
-            return self._make_ml_tree(treesams, ref, refname)
+            return self._make_ml_tree(treesams, kwargs['ref'], kwargs['refname'])
         else:
             raise SnapperDBInterrogationError("%s is an unsupported method." % (method))
 
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-    def _make_nj_tree(self, treesams):
+    def _make_nj_tree(self, treesams, dm):
         """
         **PRIVATE**
 
@@ -445,6 +449,12 @@ class SnapperDBInterrogation(object):
 
         dist_mat = get_distance_matrix(self.cur, treesams.values())
 
+        if dm != None:
+            logging.info("Distance matrix written to file: %s", dm)
+            if os.path.exists(dm) == True:
+                os.remove(dm)
+
+
         aSampleNames = treesams.keys()
         aSimpleMatrix = []
         for i, sample_1 in enumerate(aSampleNames):
@@ -459,6 +469,9 @@ class SnapperDBInterrogation(object):
                 else:
                     pass
             aSimpleMatrix.append(mat_line)
+            if dm != None:
+                with open(dm, 'a') as f:
+                    f.write("%s\n" % ','.join([sample_1] + [str(x) for x in mat_line[:-1]]))
 
         logging.info("Bulding tree.")
         oDistMat = TreeConstruction._DistanceMatrix(aSampleNames, aSimpleMatrix)
