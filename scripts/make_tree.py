@@ -64,6 +64,14 @@ Choose from 'ML' or 'NJ'. REQUIRED.""")
                       dest="output",
                       help="""The name of the output file. [Default: tree.nwk]""")
 
+    args.add_argument("--distance-matrix",
+                      "-d",
+                      type=str,
+                      metavar="FILENAME",
+                      default=None,
+                      dest="dm",
+                      help="""Store distance matrix as csv in this file. [Default: Do not store]""")
+
     args.add_argument("--samples",
                       "-s",
                       type=str,
@@ -120,6 +128,8 @@ def main(args):
         if args['ref'] == None or args['refname'] == None:
             logging.error("For ML trees, both --reference and --refname are required.")
             return 1
+        if args['dm'] != None:
+            logging.warning("Distance matrix is not going to be saved for ML trees.")
 
     samples = None
     if args['samples'] != None:
@@ -152,10 +162,15 @@ def main(args):
     result = None
     with SnapperDBInterrogation(conn_string=args['db']) as sdbi:
         try:
-            result = sdbi.get_tree(samples, clusters, args['method'], args['ref'], args['refname'])
-
-            print result
-
+            result = sdbi.get_tree(samples,
+                                   clusters,
+                                   args['method'],
+                                   ref=args['ref'],
+                                   refname=args['refname'],
+                                   dm=args['dm'])
+            with open(args['output'], 'w') as f:
+                f.write(result)
+                logging.info("Tree written to file: %s", args['output'])
         except SnapperDBInterrogationError as e:
             logging.error(e)
         else:
