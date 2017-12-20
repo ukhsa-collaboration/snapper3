@@ -220,12 +220,18 @@ class SnapperDBInterrogation(object):
         samid = row['pk_id']
 
         ct = get_closest_threshold(dis)
-        t_ct = 't%i' % (ct)
-        cluster = snad[levels.index(ct)]
+        if ct != None:
+            # selected distance <250 -> use only samples in associated cluster for calculation
+            t_ct = 't%i' % (ct)
+            cluster = snad[levels.index(ct)]
+            sql = "SELECT s.sample_name AS samname, c.fk_sample_id AS samid FROM sample_clusters c, samples s WHERE c."+t_ct+"=%s AND s.pk_id=c.fk_sample_id"
+            self.cur.execute(sql, (cluster, ))
+        else:
+            # selected distance >250 -> use all samples in database for calculation
+            sql = "SELECT sample_name AS samname, pk_id AS samid FROM samples WHERE ignore_sample is False"
+            self.cur.execute(sql)
 
         id2name = {}
-        sql = "SELECT s.sample_name AS samname, c.fk_sample_id AS samid FROM sample_clusters c, samples s WHERE c."+t_ct+"=%s AND s.pk_id=c.fk_sample_id"
-        self.cur.execute(sql, (cluster, ))
         rows = self.cur.fetchall()
         neighbours = []
         for r in rows:
@@ -237,9 +243,11 @@ class SnapperDBInterrogation(object):
             logging.info("No samples found this close to the query sample.")
             return []
         else:
-            logging.info("Calculating distances to %i samples in the same %s cluster %s.", len(neighbours), t_ct, cluster)
+            logging.info("Calculating distances to %i samples.", len(neighbours))
             distances = get_distances(self.cur, samid, neighbours)
             result_samples = [(id2name[s], d) for (s, d) in distances if d <= dis]
+            if len(result_samples) <= 0:
+                logging.info("No samples found this close to the query sample.")
             return result_samples
 
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
