@@ -1,4 +1,5 @@
 import logging
+import sys
 
 import argparse
 from argparse import RawTextHelpFormatter
@@ -96,7 +97,8 @@ def main(args):
                 result = sdbi.get_samples_below_threshold(args['sample'], args['distance'])
 
             for i, x in enumerate(result):
-                print i+1, x
+                #print i+1, x
+                sys.stdout.write("%i\t%s\t%i\n" % (i+1, x[0], x[1]))
 
         except SnapperDBInterrogationError as e:
             logging.error(e)
