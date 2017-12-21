@@ -185,7 +185,7 @@ class SnapperDBInterrogation(object):
             if di == result_samples[-1][1]:
                 result_samples.append((sa, di))
 
-        result_samples = [(id2name[sa], di) for (sa, di) in result_samples]
+        result_samples = [(id2name[sa], di) for (sa, di) in result_samples if sa != samid]
         return result_samples
 
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -227,9 +227,9 @@ class SnapperDBInterrogation(object):
             sql = "SELECT s.sample_name AS samname, c.fk_sample_id AS samid FROM sample_clusters c, samples s WHERE c."+t_ct+"=%s AND s.pk_id=c.fk_sample_id"
             self.cur.execute(sql, (cluster, ))
         else:
-            # selected distance >250 -> use all samples in database for calculation
-            sql = "SELECT sample_name AS samname, pk_id AS samid FROM samples WHERE ignore_sample is False"
-            self.cur.execute(sql)
+            # selected distance >250 -> use all samples that have been clustered and are not ignored for calculation
+            sql = "SELECT s.sample_name AS samname, c.fk_sample_id AS samid FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND s.ignore_sample IS FALSE AND s.sample_name<>%s"
+            self.cur.execute(sql, (sam_name, ))
 
         id2name = {}
         rows = self.cur.fetchall()
