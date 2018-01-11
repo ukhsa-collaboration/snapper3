@@ -246,6 +246,15 @@ def main(args):
                          len(n_pos),
                          len(gap_pos))
 
+        # missing contigs are contigs that are all ref, which might be absent from the json file
+        # if there are any like that, we need to add empty rows for them
+        missing_contigs = set(contigs.keys()).difference(data['positions'].keys())
+        if len(missing_contigs) > 0:
+            for mc in missing_contigs:
+                sql = "INSERT INTO variants (fk_sample_id, fk_contig_id, a_pos, c_pos, g_pos, t_pos, n_pos, gap_pos) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
+                cur.execute(sql, (sample_pkid, contigs[mc], [], [], [], [], [], [], ))
+                logging.info("Inserted for contig %s : As: %i, Cs: %i:, Gs: %i, Ts: %i, Ns: %i, gaps: %i", contigs[mc], 0, 0, 0, 0, 0, 0)
+
         conn.commit()
 
     except psycopg2.Error as e:
