@@ -185,7 +185,7 @@ class SnapperDBInterrogation(object):
             if di == result_samples[-1][1]:
                 result_samples.append((sa, di))
 
-        result_samples = [(id2name[sa], di) for (sa, di) in result_samples]
+        result_samples = [(id2name[sa], di) for (sa, di) in result_samples if sa != samid]
         return result_samples
 
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -220,12 +220,18 @@ class SnapperDBInterrogation(object):
         samid = row['pk_id']
 
         ct = get_closest_threshold(dis)
-        t_ct = 't%i' % (ct)
-        cluster = snad[levels.index(ct)]
+        if ct != None:
+            # selected distance <250 -> use only samples in associated cluster for calculation
+            t_ct = 't%i' % (ct)
+            cluster = snad[levels.index(ct)]
+            sql = "SELECT s.sample_name AS samname, c.fk_sample_id AS samid FROM sample_clusters c, samples s WHERE c."+t_ct+"=%s AND s.pk_id=c.fk_sample_id"
+            self.cur.execute(sql, (cluster, ))
+        else:
+            # selected distance >250 -> use all samples that have been clustered and are not ignored for calculation
+            sql = "SELECT s.sample_name AS samname, c.fk_sample_id AS samid FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND s.ignore_sample IS FALSE AND s.sample_name<>%s"
+            self.cur.execute(sql, (sam_name, ))
 
         id2name = {}
-        sql = "SELECT s.sample_name AS samname, c.fk_sample_id AS samid FROM sample_clusters c, samples s WHERE c."+t_ct+"=%s AND s.pk_id=c.fk_sample_id"
-        self.cur.execute(sql, (cluster, ))
         rows = self.cur.fetchall()
         neighbours = []
         for r in rows:
@@ -237,9 +243,11 @@ class SnapperDBInterrogation(object):
             logging.info("No samples found this close to the query sample.")
             return []
         else:
-            logging.info("Calculating distances to %i samples in the same %s cluster %s.", len(neighbours), t_ct, cluster)
+            logging.info("Calculating distances to %i samples.", len(neighbours))
             distances = get_distances(self.cur, samid, neighbours)
             result_samples = [(id2name[s], d) for (s, d) in distances if d <= dis]
+            if len(result_samples) <= 0:
+                logging.info("No samples found this close to the query sample.")
             return result_samples
 
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -360,7 +368,7 @@ class SnapperDBInterrogation(object):
 
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-    def get_tree(self, samples, clusters, method, ref=None, refname=None):
+    def get_tree(self, samples, clusters, method, **kwargs):
         """
         Build a tree for a given set of samples with a given method.
 
@@ -408,24 +416,28 @@ class SnapperDBInterrogation(object):
 
         nofsams = len(treesams.keys())
         if nofsams < 3:
-            raise SnapperDBInterrogationError("At least 3 samples are required to make a tree. Only %i found.", nofsams)
+            raise SnapperDBInterrogationError("At least 3 samples are required to make a tree. Only %i found." % nofsams)
+        elif nofsams > 400:
+            raise SnapperDBInterrogationError("This tree would contain %i samples. A maximum of 400 is permitted. Please select a more targeted subset." % nofsams)
+        else:
+            pass
 
         logging.info("Calculating %s tree for %i samples.", method, nofsams)
 
         if method == 'NJ':
             if HAVE_BIOPYTHON == False:
                 raise SnapperDBInterrogationError("You need to have Biopython for making NJ trees.")
-            return self._make_nj_tree(treesams)
+            return self._make_nj_tree(treesams, kwargs['dm'])
         elif method == 'ML':
             if self._can_we_make_an_ml_tree() == False:
                 raise SnapperDBInterrogationError("You need to have FastTree for making ML trees.")
-            return self._make_ml_tree(treesams, ref, refname)
+            return self._make_ml_tree(treesams, kwargs['ref'], kwargs['refname'])
         else:
             raise SnapperDBInterrogationError("%s is an unsupported method." % (method))
 
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-    def _make_nj_tree(self, treesams):
+    def _make_nj_tree(self, treesams, dm):
         """
         **PRIVATE**
 
@@ -445,6 +457,12 @@ class SnapperDBInterrogation(object):
 
         dist_mat = get_distance_matrix(self.cur, treesams.values())
 
+        if dm != None:
+            logging.info("Distance matrix written to file: %s", dm)
+            if os.path.exists(dm) == True:
+                os.remove(dm)
+
+
         aSampleNames = treesams.keys()
         aSimpleMatrix = []
         for i, sample_1 in enumerate(aSampleNames):
@@ -459,6 +477,9 @@ class SnapperDBInterrogation(object):
                 else:
                     pass
             aSimpleMatrix.append(mat_line)
+            if dm != None:
+                with open(dm, 'a') as f:
+                    f.write("%s\n" % ','.join([sample_1] + [str(x) for x in mat_line[:-1]]))
 
         logging.info("Bulding tree.")
         oDistMat = TreeConstruction._DistanceMatrix(aSampleNames, aSimpleMatrix)
