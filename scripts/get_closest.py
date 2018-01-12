@@ -1,4 +1,5 @@
 import logging
+import sys
 
 import argparse
 from argparse import RawTextHelpFormatter
@@ -95,8 +96,11 @@ def main(args):
             else:
                 result = sdbi.get_samples_below_threshold(args['sample'], args['distance'])
 
-            for i, x in enumerate(result):
-                print i+1, x
+            if len(result) <= 0:
+                sys.stdout.write("No samples found this close to the query sample.\n")
+            else:
+                for i, x in enumerate(result):
+                    sys.stdout.write("%i\t%s\t%i\n" % (i+1, x[0], x[1]))
 
         except SnapperDBInterrogationError as e:
             logging.error(e)
