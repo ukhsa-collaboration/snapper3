@@ -275,7 +275,7 @@ class SnapperDBInterrogation(object):
             raise SnapperDBInterrogationError("Too much clustering information found for sample %s" % (sam_name))
         else:
             row = self.cur.fetchone()
-            return "%i-%i-%i-%i-%i-%i-%i" % (row['t250'], row['t100'], row['t50'], row['t25'], row['t10'], row['t5'], row['t0'])
+            return "%i.%i.%i.%i.%i.%i.%i" % (row['t250'], row['t100'], row['t50'], row['t25'], row['t10'], row['t5'], row['t0'])
 
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -352,7 +352,7 @@ class SnapperDBInterrogation(object):
 
         sam_id = row['pk_id']
         levels = [250, 100, 50, 25, 10, 5, 0]
-        res = {'current_snad': '-'.join([str(row['t%i' % (lvl)]) for lvl in levels]),
+        res = {'current_snad': '.'.join([str(row['t%i' % (lvl)]) for lvl in levels]),
                'history': []}
 
         sql = "SELECT t0_old, t5_old, t10_old, t25_old, t50_old, t100_old, t250_old, t0_new, \
@@ -360,8 +360,8 @@ class SnapperDBInterrogation(object):
         self.cur.execute(sql, (sam_id, ))
         rows = self.cur.fetchall()
         for r in rows:
-            res['history'].append({'old': '-'.join([str(r['t%i_old' % (lvl)]) for lvl in levels]),
-                                   'new': '-'.join([str(r['t%i_new' % (lvl)]) for lvl in levels]),
+            res['history'].append({'old': '.'.join([str(r['t%i_old' % (lvl)]) for lvl in levels]),
+                                   'new': '.'.join([str(r['t%i_new' % (lvl)]) for lvl in levels]),
                                    'time': r['renamed_at']})
 
         return res
