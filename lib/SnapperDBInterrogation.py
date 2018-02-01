@@ -264,7 +264,7 @@ class SnapperDBInterrogation(object):
         Returns
         -------
         snad: str
-            "1-2-3-4-5-6-7" if successful else None
+            "1.2.3.4.5.6.7" if successful else None
         """
 
         sql = "SELECT c.t0, c.t5, c.t10, c.t25, c.t50, c.t100, c.t250 FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND s.sample_name=%s"
@@ -275,7 +275,7 @@ class SnapperDBInterrogation(object):
             raise SnapperDBInterrogationError("Too much clustering information found for sample %s" % (sam_name))
         else:
             row = self.cur.fetchone()
-            return "%i-%i-%i-%i-%i-%i-%i" % (row['t250'], row['t100'], row['t50'], row['t25'], row['t10'], row['t5'], row['t0'])
+            return "%i.%i.%i.%i.%i.%i.%i" % (row['t250'], row['t100'], row['t50'], row['t25'], row['t10'], row['t5'], row['t0'])
 
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -334,9 +334,9 @@ class SnapperDBInterrogation(object):
         Returns
         -------
         res: dict
-            {'current_snad': 1-2-3-4-5-6-7,
-             'history': [{'old': '100-2-3-4-5-6-99', 'new': '1-2-3-4-5-6-99', 'time': 2017-09-22 15:56:22.427083},
-                         {'old': '1-2-3-4-5-6-99',   'new': '1-2-3-4-5-6-7',  'time': 2017-09-23 12:00:22.427083},
+            {'current_snad': 1.2.3.4.5.6.7,
+             'history': [{'old': '100.2.3.4.5.6.99', 'new': '1.2.3.4.5.6.99', 'time': 2017-09-22 15:56:22.427083},
+                         {'old': '1.2.3.4.5.6.99',   'new': '1.2.3.4.5.6.7',  'time': 2017-09-23 12:00:22.427083},
                          ...]}
         """
 
@@ -352,7 +352,7 @@ class SnapperDBInterrogation(object):
 
         sam_id = row['pk_id']
         levels = [250, 100, 50, 25, 10, 5, 0]
-        res = {'current_snad': '-'.join([str(row['t%i' % (lvl)]) for lvl in levels]),
+        res = {'current_snad': '.'.join([str(row['t%i' % (lvl)]) for lvl in levels]),
                'history': []}
 
         sql = "SELECT t0_old, t5_old, t10_old, t25_old, t50_old, t100_old, t250_old, t0_new, \
@@ -360,8 +360,8 @@ class SnapperDBInterrogation(object):
         self.cur.execute(sql, (sam_id, ))
         rows = self.cur.fetchall()
         for r in rows:
-            res['history'].append({'old': '-'.join([str(r['t%i_old' % (lvl)]) for lvl in levels]),
-                                   'new': '-'.join([str(r['t%i_new' % (lvl)]) for lvl in levels]),
+            res['history'].append({'old': '.'.join([str(r['t%i_old' % (lvl)]) for lvl in levels]),
+                                   'new': '.'.join([str(r['t%i_new' % (lvl)]) for lvl in levels]),
                                    'time': r['renamed_at']})
 
         return res
