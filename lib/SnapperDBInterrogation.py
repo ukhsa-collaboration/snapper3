@@ -264,7 +264,7 @@ class SnapperDBInterrogation(object):
         Returns
         -------
         snad: str
-            "1-2-3-4-5-6-7" if successful else None
+            "1.2.3.4.5.6.7" if successful else None
         """
 
         sql = "SELECT c.t0, c.t5, c.t10, c.t25, c.t50, c.t100, c.t250 FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND s.sample_name=%s"
@@ -334,9 +334,9 @@ class SnapperDBInterrogation(object):
         Returns
         -------
         res: dict
-            {'current_snad': 1-2-3-4-5-6-7,
-             'history': [{'old': '100-2-3-4-5-6-99', 'new': '1-2-3-4-5-6-99', 'time': 2017-09-22 15:56:22.427083},
-                         {'old': '1-2-3-4-5-6-99',   'new': '1-2-3-4-5-6-7',  'time': 2017-09-23 12:00:22.427083},
+            {'current_snad': 1.2.3.4.5.6.7,
+             'history': [{'old': '100.2.3.4.5.6.99', 'new': '1.2.3.4.5.6.99', 'time': 2017-09-22 15:56:22.427083},
+                         {'old': '1.2.3.4.5.6.99',   'new': '1.2.3.4.5.6.7',  'time': 2017-09-23 12:00:22.427083},
                          ...]}
         """
 
