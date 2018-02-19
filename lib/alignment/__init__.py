@@ -482,7 +482,7 @@ def get_snp_addresses(db, samples):
 
 def get_all_names(db, name_of_ref_in_db):
     """
-    GHet the names of all samples in the db other than the reference.
+    Get the names of all samples in the db other than the reference.
 
     Parameters:
     -----------
@@ -517,5 +517,53 @@ def get_all_names(db, name_of_ref_in_db):
         conn.close()
 
     return names
+
+# --------------------------------------------------------------------------------------------------
+def remove_reference(dSeqs, whole_genome):
+    """
+    Remove the reference from an alignment and remove invariant positions after that
+
+    Parameters:
+    -----------
+    dSeqs: dist
+        {'seq1': 'ACGT..', 'seq2': ...}
+    whole_genome: boolean
+        True oif this is a whole genome alignment
+
+    Returns:
+    --------
+
+    """
+
+    logging.info("Removing reference from the alignment.")
+
+    try:
+        del dSeqs['reference']
+    except KeyError:
+        logging.error("Alignment does not have a key 'reference'.")
+        return None
+
+    if whole_genome == False:
+        logging.info("Removing invariant positions from alignment following reference removal.")
+        dNewseqs = {}
+        lens = []
+        for name, seq in dSeqs.items():
+            lens.append(len(seq))
+            dNewseqs[name] = ""
+        nofseqs = len(lens)
+        seqlen = lens[0]
+        # all the same length?
+        if nofseqs != lens.count(seqlen):
+            logging.error("Alignment seqs not all the same length.")
+            return None
+        for i in range(seqlen):
+            posnucs = [dSeqs[name][i] for name in dSeqs.keys()]
+            # not all the same?
+            if len(posnucs) != posnucs.count(posnucs[0]):
+                for name in dSeqs.keys():
+                    dNewseqs[name] += dSeqs[name][i]
+        return dNewseqs
+    else:
+        return dSeqs
 
 # --------------------------------------------------------------------------------------------------

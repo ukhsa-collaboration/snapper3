@@ -115,6 +115,11 @@ def get_args():
     group_c.add_argument("--exclude",
                          help="Exclude any positions specified in the BED file.")
 
+    args.add_argument("--remove-ref",
+                      action='store_true',
+                      help="Remove the reference from the alignment at the end and delete" + \
+                           "invariant positions after that. [Default: reference is always in alignment]")
+
     return args
 
 # --------------------------------------------------------------------------------------------------
@@ -325,6 +330,9 @@ def main(args):
                 dSeqs[sample_name] += seq
             except KeyError:
                 dSeqs[sample_name] = seq
+
+    if args["remove_ref"]:
+        dSeqs = align.remove_reference(dSeqs, args["whole_genome"])
 
     # write to file
     with open(args["out"], "w") as fp:

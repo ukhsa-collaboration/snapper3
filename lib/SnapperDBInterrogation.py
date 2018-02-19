@@ -431,7 +431,7 @@ class SnapperDBInterrogation(object):
         elif method == 'ML':
             if self._can_we_make_an_ml_tree() == False:
                 raise SnapperDBInterrogationError("You need to have FastTree for making ML trees.")
-            return self._make_ml_tree(treesams, kwargs['ref'], kwargs['refname'])
+            return self._make_ml_tree(treesams, kwargs['ref'], kwargs['refname'], kwargs['rmref'])
         else:
             raise SnapperDBInterrogationError("%s is an unsupported method." % (method))
 
@@ -461,7 +461,6 @@ class SnapperDBInterrogation(object):
             logging.info("Distance matrix written to file: %s", dm)
             if os.path.exists(dm) == True:
                 os.remove(dm)
-
 
         aSampleNames = treesams.keys()
         aSimpleMatrix = []
@@ -499,7 +498,7 @@ class SnapperDBInterrogation(object):
 
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-    def _make_ml_tree(self, treesams, ref, refname):
+    def _make_ml_tree(self, treesams, ref, refname, rmref):
         """
         **PRIVATE**
 
@@ -535,7 +534,8 @@ class SnapperDBInterrogation(object):
                'debug': False,
                'sample_Ns_gaps_auto_factor': 2.0,
                'name_of_ref_in_db': refname,
-               'out': tmpfile}
+               'out': tmpfile,
+               'remove_ref': rmref}
 
         if get_alignment.main(inp) != 0:
             raise SnapperDBInterrogationError("Error in get_alignment main.")

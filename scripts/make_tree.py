@@ -70,7 +70,7 @@ Choose from 'ML' or 'NJ'. REQUIRED.""")
                       metavar="FILENAME",
                       default=None,
                       dest="dm",
-                      help="""Store distance matrix as csv in this file. [Default: Do not store]""")
+                      help="""Store distance matrix as csv in this file. Ignored for ML. [Default: Do not store]""")
 
     args.add_argument("--samples",
                       "-s",
@@ -101,6 +101,11 @@ or a comma-separated list w/o blanks. [Default: None, but then --clusters has to
                       type=str,
                       default=None,
                       help="The name of the reference in the database. Required for ML, else ignored.")
+
+    args.add_argument("--remove-ref",
+                      action='store_true',
+                      help="""Remove the reference from the ML tree [Default: reference is always in ML tree]
+Ignored for NJ. NJ have the reference in when it's specified in --clusters or --samples.""")
 
     return args
 
@@ -167,7 +172,8 @@ def main(args):
                                    args['method'],
                                    ref=args['ref'],
                                    refname=args['refname'],
-                                   dm=args['dm'])
+                                   dm=args['dm'],
+                                   rmref=args['remove_ref'])
             with open(args['output'], 'w') as f:
                 f.write(result)
                 logging.info("Tree written to file: %s", args['output'])
