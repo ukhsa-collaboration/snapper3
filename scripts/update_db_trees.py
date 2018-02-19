@@ -102,7 +102,7 @@ def main(args):
             t5_mems = get_members(cur, 't5', t5_c)
 
             # is there a tree for this?
-            sql = "SELECT pk_id, sample_set FROM trees WHERE t5_name=%s"
+            sql = "SELECT pk_id, sample_set, mod_date, t50_size FROM trees WHERE t5_name=%s"
             cur.execute(sql, (t5_c, ))
             if cur.rowcount == 0:
                 # no
@@ -116,23 +116,18 @@ def main(args):
                 # get the pkid and the set of sample ids in this tree
                 tree_row_id = row['pk_id']
                 tree_sample_set = set(row['sample_set'])
+                mod_time = row['mod_date']
+                t50_size = row['t50_size']
 
-                # are all samples that are currently in the cluster (including recent additions)
-                # already in the tree?
-                if t5_mems.issubset(tree_sample_set) == True:
-                    # yes
-                    logging.info("Tree for t5 cluster %i is still up to date.", t5_c)
-                else:
-                    # no
-                    logging.info("Updating an existing tree for t5 cluster %i in rows with pk_id %s", t5_c, tree_row_id)
-                    logging.info("This is because samples %s should be in the tree but are not.", t5_mems.difference(tree_sample_set))
-                    update_an_existing_tree(cur,
-                                            conn,
-                                            tree_row_id,
-                                            t5_c,
-                                            t5_mems,
-                                            tree_sample_set,
-                                            args)
+                update_an_existing_tree(cur,
+                                        conn,
+                                        tree_row_id,
+                                        t5_c,
+                                        t5_mems,
+                                        tree_sample_set,
+                                        mod_time,
+                                        t50_size,
+                                        args)
 
             else:
                 logging.error("Multiple trees for t5 cluster %i", t5_c)
@@ -198,7 +193,8 @@ def make_a_new_tree(cur, t5_name, t5_members, args):
                                    None,
                                    'ML',
                                    ref=args['ref'],
-                                   refname=args['refname'])
+                                   refname=args['refname'],
+                                   rmref=True)
         except SnapperDBInterrogationError as e:
             logging.error(e)
         else:
@@ -206,14 +202,14 @@ def make_a_new_tree(cur, t5_name, t5_members, args):
 
     nownow = datetime.now()
 
-    sql = "INSERT INTO trees (nwkfile, t5_name, sample_set, mod_date, created_at, lockdown) VALUES (%s, %s, %s, %s, %s, %s)"
-    cur.execute(sql, (nwktree, t5_name, list(sample_set), nownow, nownow, False))
+    sql = "INSERT INTO trees (nwkfile, t5_name, t50_size, sample_set, mod_date, created_at, lockdown) VALUES (%s, %s, %s, %s, %s, %s)"
+    cur.execute(sql, (nwktree, t5_name, len(t50_members), list(sample_set), nownow, nownow, False))
 
     return 0
 
 # --------------------------------------------------------------------------------------------------
 
-def update_an_existing_tree(cur, conn, tree_row_id, t5_name, t5_members, tree_sample_set, args):
+def update_an_existing_tree(cur, conn, tree_row_id, t5_name, t5_members, tree_sample_set, mod_time, t50_size, args):
     """
     Updates an existing tree in the database
 
@@ -231,6 +227,10 @@ def update_an_existing_tree(cur, conn, tree_row_id, t5_name, t5_members, tree_sa
         set of members for this t5 cluster
     tree_sample_set: set
         set of samples in the tree
+    mod_time: datetime.datetime
+        time tree was last updated
+    t50_size: int
+        size of the t50 cluster last time it was updated
     args: dict
         as passed to main function
 
@@ -239,57 +239,103 @@ def update_an_existing_tree(cur, conn, tree_row_id, t5_name, t5_members, tree_sa
     1 or None if fail
     """
 
-    sql = "UPDATE trees SET nwkfile=%s, sample_set=%s, lockdown=%s WHERE pk_id=%s"
-    cur.execute(sql, (None, None, True, tree_row_id, ))
-    conn.commit()
-
-    tree_sample_set.update(t5_members)
-    logging.debug("t5 %s has %i members.", t5_name, len(t5_members))
-
     t50_name = get_t50_cluster(cur, t5_name, t5_members)
     logging.debug("t5 %s sits within t50 %s", t5_name, t50_name)
 
     t50_members = get_members(cur, 't50', t50_name)
     logging.debug("t50 %s has %i members.", t50_name, len(t50_members))
 
-    for t5_mem in t5_members:
+    logging.debug("t50 size at last update was %i, t50 size now is %i", t50_size, len(t50_members))
+    if len(t50_members) <= t50_size:
+        logging.debug("Tree for t5 cluster %i does not need updating.", t5_name)
+        return 1
+
+    needs_update = False
+
+    # get the maximum t0 cluster number in the previous tree
+    sql = "SELECT max(t0) FROM sample_clusters WHERE fk_sample_id IN %s"
+    cur.execute(sql, (tuple(tree_sample_set), ), )
+    tree_t0_max = cur.fetchone()[0]
+
+    # set with t5 members that are not in the tree yet
+    new_t5_members = t5_members.difference(tree_sample_set)
+    # set with t5 members already in the tree
+    old_t5_members = t5_members.intersection(tree_sample_set)
+    # for all t5 members that are not in the tree yet
+    # check whether there are members in the t50 that are not in the tree yet, but should be
+    logging.debug("There are %i new members in this t5 cluster.", len(new_t5_members))
+    for new_t5_mem in new_t5_members:
+        # definitely needs updating when there is new t5 members
+        needs_update = True
         # check only the distances to t50 cluster samples that are not in the tree yet
         check_samples = t50_members.difference(tree_sample_set)
-        dists = get_distances(cur, t5_mem, list(check_samples))
-        tree_sample_set.update([sa for (sa, di) in dists if di <= 50])
+        logging.debug("Checking distances from new t5 member %s to %i t50 members that are not in the tree yet.", new_t5_mem, len(check_samples))
+        dists = get_distances(cur, new_t5_mem, list(check_samples))
+        new_members = [sa for (sa, di) in dists if di <= 50]
+        if len(new_members) > 0:
+            logging.debug("These samples need to be in the tree now: %s.", str(new_members))
+            tree_sample_set.update(new_members)
 
-    logging.info("The tree for t5 cluster %s will contain %i samples.", t5_name, len(tree_sample_set))
+    # reduce the list of members in the 50 to those REALLY neeeding checking
+    filtered_t50_members = filter_samples_to_be_checked(cur, t50_members, tree_t0_max)
+    logging.debug("Reduced nof t50 members to be checked from %i to %i.", len(t50_members), len(filtered_t50_members))
 
-    sample_names = get_sample_names(cur, tree_sample_set)
+    for old_t5_mem in old_t5_members:
+        # check only the distances to t50 cluster samples that are not in the tree yet
+        check_samples = filtered_t50_members.difference(tree_sample_set)
+        logging.debug("Checking distances from old t5 member %s to %i t50 members that are not in the tree yet.", old_t5_mem, len(check_samples))
+        dists = get_distances(cur, old_t5_mem, list(check_samples))
+        new_members = [sa for (sa, di) in dists if di <= 50]
+        if len(new_members) > 0:
+            logging.debug("These samples need to be in the tree now: %s.", str(new_members))
+            tree_sample_set.update(new_members)
+            needs_update = True
 
-    # if the reference is part of the tree we need to remove this here
-    # it is always part of all trees anyway
-    try:
-        sample_names.remove(args['refname'])
-    except KeyError:
-        pass
+    if needs_update == True:
 
-    # make a tree now using SnapperDBInterrogation interface
-    nwktree = None
-    with SnapperDBInterrogation(conn_string=args['db']) as sdbi:
+        # lock table row during tree update
+        sql = "UPDATE trees SET nwkfile=%s, sample_set=%s, lockdown=%s WHERE pk_id=%s"
+        cur.execute(sql, (None, None, True, tree_row_id, ))
+        conn.commit()
+
+        logging.info("The tree for t5 cluster %s needs updating and will now contain %i samples.", t5_name, len(tree_sample_set))
+
+        sample_names = get_sample_names(cur, tree_sample_set)
+
+        # if the reference is part of the tree we need to remove this here
+        # it is always part of all trees anyway
         try:
-            nwktree = sdbi.get_tree(list(sample_names),
-                                   None,
-                                   'ML',
-                                   ref=args['ref'],
-                                   refname=args['refname'])
-        except SnapperDBInterrogationError as e:
-            logging.error(e)
-            return None
-        else:
-            logging.info("Tree calculation completed successfully.")
+            sample_names.remove(args['refname'])
+        except KeyError:
+            pass
 
-    nownow = datetime.now()
+        # make a tree now using SnapperDBInterrogation interface
+        nwktree = None
+        with SnapperDBInterrogation(conn_string=args['db']) as sdbi:
+            try:
+                nwktree = sdbi.get_tree(list(sample_names),
+                                        None,
+                                        'ML',
+                                        ref=args['ref'],
+                                        refname=args['refname'],
+                                        rmref=True)
+            except SnapperDBInterrogationError as e:
+                logging.error(e)
+                return None
+            else:
+                logging.info("Tree calculation completed successfully.")
 
-    # update the databse
-    sql = "UPDATE trees SET nwkfile=%s, lockdown=%s, mod_date=%s, sample_set=%s WHERE pk_id=%s"
-    cur.execute(sql, (nwktree, False, nownow, list(tree_sample_set), tree_row_id, ))
-    conn.commit()
+        nownow = datetime.now()
+
+        # update the database - unlock the table row
+        sql = "UPDATE trees SET nwkfile=%s, lockdown=%s, mod_date=%s, sample_set=%s, t50_size=%s WHERE pk_id=%s"
+        cur.execute(sql, (nwktree, False, nownow, list(tree_sample_set), len(t50_members), tree_row_id, ))
+        conn.commit()
+
+    else:
+        sql = "UPDATE trees SET t50_size=%s WHERE pk_id=%s"
+        cur.execute(sql, (len(t50_members), tree_row_id, ))
+        logging.debug("Tree for t5 cluster %i does not need updating.", t5_name)
 
     return 1
 
@@ -381,6 +427,55 @@ def get_t50_cluster(cur, t5_name, t5_members):
     t50_name = t50_cluster.pop()
 
     return t50_name
+
+# --------------------------------------------------------------------------------------------------
+
+def filter_samples_to_be_checked(cur, samples, tree_t0_max):
+    """
+    Get the name of the t50 cluster that all members of this t5 cluster a members of.
+
+    Parameters
+    ----------
+    cur: obj
+        database cursor object
+    samples: set
+        unfiltered set of samples
+    tree_t0_max: int
+        max t0 of any previous tree members
+
+    Returns
+    -------
+    x: set
+        minimal set of samples that need to be checked
+    """
+
+    t0s = {}
+    sams = {}
+
+    # get the t0 for each member in the set of samples
+    sql = "SELECT fk_sample_id, t0 FROM sample_clusters WHERE fk_sample_id IN %s"
+    cur.execute(sql, (tuple(samples), ))
+    rows = cur.fetchall()
+
+    for r in rows:
+        t0s[r['fk_sample_id']] = r['t0']
+        try:
+            sams[r['t0']].append(r['fk_sample_id'])
+        except KeyError:
+            sams[r['t0']] = [r['fk_sample_id']]
+
+    # t0s[sam1] = 123
+    # sams[123] = [sam1, sam2, sam3, ...]
+
+    # return only those samples that either:
+    #     - have a t0 that is the larger than the biggest in the tree so far
+    #     - are not alone in their t0
+    # but why?
+    # => because samples that have a smaller t0 than one that exists in the tree have already
+    #    been checked against current tree samples
+    #    Except: the ones that have been added to an existing t0 or are in a t0 that has been merged
+    #            -> therefore filter out only t0 singletons
+    return set([s for s in samples if (t0s[s] >= tree_t0_max or len(sams[t0s[s]]) >= 2)])
 
 # --------------------------------------------------------------------------------------------------
 

@@ -108,7 +108,7 @@ def main():
         logging.info("Calculating trees for %i t5 clusters.", len(treeables))
 
         for t5_name in treeables:
-            tree_samples = get_tree_samples_set(cur, t5_name)
+            tree_samples, t50_size = get_tree_samples_set(cur, t5_name)
 
             logging.info("The tree for t5 cluster %s will contain %i samples.", t5_name, len(tree_samples))
 
@@ -129,7 +129,8 @@ def main():
                                            None,
                                            'ML',
                                            ref=oArgs.ref,
-                                           refname=oArgs.refname)
+                                           refname=oArgs.refname,
+                                           rmref=True)
                 except SnapperDBInterrogationError as e:
                     logging.error(e)
                 else:
@@ -137,8 +138,8 @@ def main():
 
             nownow = datetime.now()
 
-            sql = "INSERT INTO trees (nwkfile, t5_name, sample_set, mod_date, created_at, lockdown) VALUES (%s, %s, %s, %s, %s, %s)"
-            cur.execute(sql, (nwktree, t5_name, list(tree_samples), nownow, nownow, False))
+            sql = "INSERT INTO trees (nwkfile, t5_name, t50_size, sample_set, mod_date, created_at, lockdown) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+            cur.execute(sql, (nwktree, t5_name, t50_size, list(tree_samples), nownow, nownow, False))
 
         conn.commit()
 
@@ -170,6 +171,8 @@ def get_tree_samples_set(cur, t5_name):
     -------
     sample_set: set
         it's in the name
+    t50_size: int
+        nof members in the t50 cluster
     """
 
     logging.debug("Processing t5 cluster %s", t5_name)
@@ -201,15 +204,16 @@ def get_tree_samples_set(cur, t5_name):
     cur.execute(sql, (t50_name, ))
     rows = cur.fetchall()
     t50_members.update([r['samid'] for r in rows])
+    t50_size = len(t50_members)
 
-    logging.debug("t50 %s has %i members.", t50_name, len(t50_members))
+    logging.debug("t50 %s has %i members.", t50_name, t50_size)
 
     for t5_mem in t5_members:
         check_samples = t50_members.difference(sample_set)
         dists = get_distances(cur, t5_mem, list(check_samples))
         sample_set.update([sa for (sa, di) in dists if di <= 50])
 
-    return sample_set
+    return sample_set, t50_size
 
 # -------------------------------------------------------------------------------------------------
 

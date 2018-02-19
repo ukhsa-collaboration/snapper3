@@ -101,10 +101,10 @@ CREATE TABLE trees (
     nwkfile bytea,
 	t5_name integer,
 	sample_set integer[],
+    t50_size integer,
 	mod_date timestamp,
 	created_at timestamp,
 	lockdown boolean DEFAULT FALSE
 );
-
 
 CREATE EXTENSION intarray;
