@@ -234,7 +234,7 @@ def empty_trees_table(cur):
     sql = "DROP TABLE trees"
     cur.execute(sql)
 
-    sql = "CREATE TABLE trees (pk_id SERIAL PRIMARY KEY, nwkfile bytea, t5_name integer, sample_set integer[], mod_date timestamp, created_at timestamp, lockdown boolean DEFAULT FALSE)"
+    sql = "CREATE TABLE trees (pk_id SERIAL PRIMARY KEY, nwkfile bytea, t5_name integer, t50_size integer, sample_set integer[], mod_date timestamp, created_at timestamp, lockdown boolean DEFAULT FALSE)"
     cur.execute(sql)
 
     return 0

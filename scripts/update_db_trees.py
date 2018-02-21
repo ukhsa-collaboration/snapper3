@@ -239,15 +239,17 @@ def update_an_existing_tree(cur, conn, tree_row_id, t5_name, t5_members, tree_sa
     1 or None if fail
     """
 
+    logging.debug("=== Checking if tree for t5 cluster %s needs updating. ===", t5_name)
+
     t50_name = get_t50_cluster(cur, t5_name, t5_members)
-    logging.debug("t5 %s sits within t50 %s", t5_name, t50_name)
+    logging.debug("t5 %s sits within t50 %s. It has %i members", t5_name, t50_name, len(t5_members))
 
     t50_members = get_members(cur, 't50', t50_name)
     logging.debug("t50 %s has %i members.", t50_name, len(t50_members))
 
     logging.debug("t50 size at last update was %i, t50 size now is %i", t50_size, len(t50_members))
     if len(t50_members) <= t50_size:
-        logging.debug("Tree for t5 cluster %i does not need updating.", t5_name)
+        logging.debug("Tree for t5 cluster %s does not need updating.", t5_name)
         return 1
 
     needs_update = False
@@ -256,6 +258,8 @@ def update_an_existing_tree(cur, conn, tree_row_id, t5_name, t5_members, tree_sa
     sql = "SELECT max(t0) FROM sample_clusters WHERE fk_sample_id IN %s"
     cur.execute(sql, (tuple(tree_sample_set), ), )
     tree_t0_max = cur.fetchone()[0]
+
+    logging.debug("Max t0 in this tree is: %i", tree_t0_max)
 
     # set with t5 members that are not in the tree yet
     new_t5_members = t5_members.difference(tree_sample_set)
@@ -450,7 +454,7 @@ def filter_samples_to_be_checked(cur, samples, tree_t0_max):
     """
 
     t0s = {}
-    sams = {}
+    t0len = {}
 
     # get the t0 for each member in the set of samples
     sql = "SELECT fk_sample_id, t0 FROM sample_clusters WHERE fk_sample_id IN %s"
@@ -460,12 +464,15 @@ def filter_samples_to_be_checked(cur, samples, tree_t0_max):
     for r in rows:
         t0s[r['fk_sample_id']] = r['t0']
         try:
-            sams[r['t0']].append(r['fk_sample_id'])
+            _ = t0len[r['t0']]
         except KeyError:
-            sams[r['t0']] = [r['fk_sample_id']]
+            sql = "SELECT fk_sample_id FROM sample_clusters WHERE t0=%s"
+            cur.execute(sql, (r['t0'], ))
+            cur.fetchall()
+            t0len[r['t0']] = cur.rowcount
 
     # t0s[sam1] = 123
-    # sams[123] = [sam1, sam2, sam3, ...]
+    # t0len[123] = 2 <- length
 
     # return only those samples that either:
     #     - have a t0 that is the larger than the biggest in the tree so far
@@ -475,7 +482,12 @@ def filter_samples_to_be_checked(cur, samples, tree_t0_max):
     #    been checked against current tree samples
     #    Except: the ones that have been added to an existing t0 or are in a t0 that has been merged
     #            -> therefore filter out only t0 singletons
-    return set([s for s in samples if (t0s[s] >= tree_t0_max or len(sams[t0s[s]]) >= 2)])
+
+    ret = set([s for s in samples if (t0s[s] >= tree_t0_max or t0len[t0s[s]] >= 2)])
+
+    logging.debug("These samples were excluded from consideration: %s", str(samples.difference(ret)))
+
+    return ret
 
 # --------------------------------------------------------------------------------------------------
 
