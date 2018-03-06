@@ -182,7 +182,7 @@ def make_a_new_tree(cur, t5_name, t5_members, args):
     sample_names = get_sample_names(cur, sample_set)
 
     try:
-        sample_names.remove(oArgs.refname)
+        sample_names.remove(args['refname'])
     except KeyError:
         pass
 
@@ -202,8 +202,8 @@ def make_a_new_tree(cur, t5_name, t5_members, args):
 
     nownow = datetime.now()
 
-    sql = "INSERT INTO trees (nwkfile, t5_name, t50_size, sample_set, mod_date, created_at, lockdown) VALUES (%s, %s, %s, %s, %s, %s)"
-    cur.execute(sql, (nwktree, t5_name, len(t50_members), list(sample_set), nownow, nownow, False))
+    sql = "INSERT INTO trees (nwkfile, t5_name, t50_size, sample_set, mod_date, created_at, lockdown) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+    cur.execute(sql, (nwktree, t5_name, len(t50_members), list(sample_set), nownow, nownow, False, ))
 
     return 0
 
