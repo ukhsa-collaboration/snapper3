@@ -418,7 +418,10 @@ class SnapperDBInterrogation(object):
         if nofsams < 3:
             raise SnapperDBInterrogationError("At least 3 samples are required to make a tree. Only %i found." % nofsams)
         elif nofsams > 400:
-            raise SnapperDBInterrogationError("This tree would contain %i samples. A maximum of 400 is permitted. Please select a more targeted subset." % nofsams)
+            if kwargs.has_key('overwrite_max') == True and kwargs['overwrite_max'] == True:
+                pass
+            else:
+                raise SnapperDBInterrogationError("This tree would contain %i samples. A maximum of 400 is permitted. Please select a more targeted subset." % nofsams)
         else:
             pass
 

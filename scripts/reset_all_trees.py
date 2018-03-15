@@ -130,7 +130,8 @@ def main():
                                            'ML',
                                            ref=oArgs.ref,
                                            refname=oArgs.refname,
-                                           rmref=True)
+                                           rmref=True,
+                                           overwrite_max=True)
                 except SnapperDBInterrogationError as e:
                     logging.error(e)
                 else:

@@ -194,7 +194,8 @@ def make_a_new_tree(cur, t5_name, t5_members, args):
                                    'ML',
                                    ref=args['ref'],
                                    refname=args['refname'],
-                                   rmref=True)
+                                   rmref=True,
+                                   overwrite_max=True)
         except SnapperDBInterrogationError as e:
             logging.error(e)
         else:
@@ -322,7 +323,8 @@ def update_an_existing_tree(cur, conn, tree_row_id, t5_name, t5_members, tree_sa
                                         'ML',
                                         ref=args['ref'],
                                         refname=args['refname'],
-                                        rmref=True)
+                                        rmref=True,
+                                        overwrite_max=True)
             except SnapperDBInterrogationError as e:
                 logging.error(e)
                 return None
