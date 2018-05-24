@@ -87,16 +87,16 @@ def get_args():
                       help="Keeps columns with fraction of Ns below specified threshold.")
 
     args.add_argument("--sample-Ns",
-                      help="Keeps samples with fraction of Ns below specified threshold or put 'auto'." + \
-                           "Fraction expressed as fraction of genome. Requires --reflength or --reference.")
+                      help="""Keeps samples with fraction of Ns below specified threshold or put 'auto'.
+Fraction expressed as fraction of genome. Requires --reflength or --reference.""")
     args.add_argument("--sample-gaps",
-                      help="Keeps samples with fraction of gaps below specified threshold or put 'auto'." + \
-                           "Fraction expressed as fraction of genome. Requires --reflength or --reference.")
+                      help="""Keeps samples with fraction of gaps below specified threshold or put 'auto'.
+Fraction expressed as fraction of genome. Requires --reflength or --reference.""")
     args.add_argument("--sample-Ns-gaps-auto-factor",
                       default=2.0,
                       type=float,
-                      help="When using 'auto' option for --sample-gaps or --sample-Ns, remove sample that have" + \
-                           "gaps or Ns this many times above the stddev of all samples. [Default: 2.0]")
+                      help="""When using 'auto' option for --sample-gaps or --sample-Ns, remove sample that have
+gaps or Ns this many times above the stddev of all samples. [Default: 2.0]""")
     args.add_argument("--snp-address",
                       action='store_true',
                       help="Annotate fasta sample header with SNP address where available. [Default: don't]")
@@ -116,9 +116,12 @@ def get_args():
                          help="Exclude any positions specified in the BED file.")
 
     args.add_argument("--remove-ref",
-                      action='store_true',
-                      help="Remove the reference from the alignment at the end and delete" + \
-                           "invariant positions after that. [Default: reference is always in alignment]")
+                      choices=['keep', 'invariant', 'invariantn'],
+                      default='keep',
+                      help="""Remove the reference from the alignment at the end and delete
+invariant positions (invariant) or remove all positions
+that are invariant after n and gaps have been removed.
+[Default: keep reference in alignment]""")
 
     return args
 
@@ -331,8 +334,8 @@ def main(args):
             except KeyError:
                 dSeqs[sample_name] = seq
 
-    if args["remove_ref"]:
-        dSeqs = align.remove_reference(dSeqs, args["whole_genome"])
+    if args["remove_ref"] != 'keep':
+        dSeqs = align.remove_reference(dSeqs, args["whole_genome"], args['remove_ref'])
 
     # write to file
     with open(args["out"], "w") as fp:

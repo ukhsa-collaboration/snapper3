@@ -519,7 +519,8 @@ def get_all_names(db, name_of_ref_in_db):
     return names
 
 # --------------------------------------------------------------------------------------------------
-def remove_reference(dSeqs, whole_genome):
+
+def remove_reference(dSeqs, whole_genome, remove_ref):
     """
     Remove the reference from an alignment and remove invariant positions after that
 
@@ -529,10 +530,14 @@ def remove_reference(dSeqs, whole_genome):
         {'seq1': 'ACGT..', 'seq2': ...}
     whole_genome: boolean
         True oif this is a whole genome alignment
+    remove_ref: str
+        'invariant' or 'invariantn' to define what to do after reference removal
 
     Returns:
     --------
-
+    dSeqs: dist
+        {'seq1': 'ACGT..', 'seq2': ...} without reference in it
+    None on error
     """
 
     logging.info("Removing reference from the alignment.")
@@ -558,6 +563,28 @@ def remove_reference(dSeqs, whole_genome):
             return None
         for i in range(seqlen):
             posnucs = [dSeqs[name][i] for name in dSeqs.keys()]
+
+            # we want to remove all positions where there is only one real nucleotide [ACGT] left
+            # after all N and - have been removed
+            if remove_ref == 'invariantn':
+                while True:
+                    try:
+                        posnucs.remove('N')
+                    except ValueError:
+                        break
+                while True:
+                    try:
+                        posnucs.remove('-')
+                    except ValueError:
+                        break
+                # if there is nothing left we only had N and - at this position in the alignment
+                if len(posnucs) <= 0:
+                    continue
+            # we'll keep N and - in the alignment so we only need to check that
+            # they are not all the same at this position
+            else:
+                pass
+
             # not all the same?
             if len(posnucs) != posnucs.count(posnucs[0]):
                 for name in dSeqs.keys():
