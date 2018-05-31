@@ -10,6 +10,25 @@ import lib.alignment as align
 
 # --------------------------------------------------------------------------------------------------
 
+class AlignmentPosition(object):
+    """
+    Tiny class to capture some information about a positin in an alignment.
+    Information captured is:
+        - the nucleotide
+        - the contig name
+        - the position in the original reference genome
+    """
+
+    def __init__(self, **kwargs):
+        """
+        Constructor.
+        """
+        self.nuc = kwargs["nuc"]
+        self.contig = kwargs["contig"]
+        self.gp = kwargs["pos"] # gp as in genome position
+
+# --------------------------------------------------------------------------------------------------
+
 def get_desc():
     """
     Get the description of this module
@@ -320,19 +339,21 @@ def main(args):
                 for nuc in data['reference'].keys():
                     for i in data['reference'][nuc]:
                         seq_pos = all_pos[i]
-                        dAlign[sample_name][seq_pos] = nuc
+                        # use AlignmentPosition to preserve information about the original genome position
+                        dAlign[sample_name][seq_pos] = AlignmentPosition(nuc=nuc, contig=contig, pos=i)
 
             # overwrite reference positions where necessary
             for nuc in data[sample_name].keys():
                 for i in data[sample_name][nuc]:
                     seq_pos = all_pos[i]
-                    dAlign[sample_name][seq_pos] = nuc
+                    # use AlignmentPosition to preserve information about the original genome position
+                    dAlign[sample_name][seq_pos] = AlignmentPosition(nuc=nuc, contig=contig, pos=i)
 
-            seq = ''.join(dAlign[sample_name])
+            #seq = ''.join(dAlign[sample_name])
             try:
-                dSeqs[sample_name] += seq
+                dSeqs[sample_name] += dAlign[sample_name]
             except KeyError:
-                dSeqs[sample_name] = seq
+                dSeqs[sample_name] = dAlign[sample_name]
 
     if args["remove_ref"] != 'keep':
         dSeqs = align.remove_reference(dSeqs, args["whole_genome"], args['remove_ref'])
@@ -341,6 +362,9 @@ def main(args):
     with open(args["out"], "w") as fp:
         # write seqs to file
         for name, seq in dSeqs.iteritems():
+            # seq is a list of AlignmentPosition objects
+            seq = ''.join([x.nuc for x in seq])
+            # now it's a string
             if dSnads != None and dSnads.has_key(name):
                 fp.write(">%s %s\n%s\n" % (name, dSnads[name], seq))
             else:

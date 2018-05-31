@@ -554,7 +554,7 @@ def remove_reference(dSeqs, whole_genome, remove_ref):
         lens = []
         for name, seq in dSeqs.items():
             lens.append(len(seq))
-            dNewseqs[name] = ""
+            dNewseqs[name] = []
         nofseqs = len(lens)
         seqlen = lens[0]
         # all the same length?
@@ -562,7 +562,16 @@ def remove_reference(dSeqs, whole_genome, remove_ref):
             logging.error("Alignment seqs not all the same length.")
             return None
         for i in range(seqlen):
-            posnucs = [dSeqs[name][i] for name in dSeqs.keys()]
+            # values in dSeqs are lists of AlignmentPosition objects
+            posnucs = [dSeqs[name][i].nuc for name in dSeqs.keys()]
+
+            # get the original genome positions for this position in the alignment
+            # we're not doing anything with it other than a sanity check but it's
+            # useful for investigating merges
+            gpos = [dSeqs[name][i].gp for name in dSeqs.keys()]
+            if gpos.count(gpos[0]) != len(gpos):
+                logging.error("Not all genome positions for a given alignment position are equal.")
+                return None
 
             # we want to remove all positions where there is only one real nucleotide [ACGT] left
             # after all N and - have been removed
@@ -588,7 +597,7 @@ def remove_reference(dSeqs, whole_genome, remove_ref):
             # not all the same?
             if len(posnucs) != posnucs.count(posnucs[0]):
                 for name in dSeqs.keys():
-                    dNewseqs[name] += dSeqs[name][i]
+                    dNewseqs[name].append(dSeqs[name][i])
         return dNewseqs
     else:
         return dSeqs
