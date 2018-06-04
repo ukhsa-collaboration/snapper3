@@ -90,7 +90,7 @@ def get_the_data_from_the_input(args):
             logging.error("Could not open file %s", args['input'])
             return None
         if check_json_format(data) == False:
-            logging.error("Data in %s is not in the correct format. Pleas use the latest version of Phenix to make this file from a filtered vcf.", args['input'])
+            logging.error("Data in %s is not in the correct format. Please use the latest version of Phenix to make this file from a filtered vcf.", args['input'])
             return None
     elif args['format'] == 'fasta':
         dRef = None

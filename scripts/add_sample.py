@@ -129,6 +129,8 @@ def main(args):
     Creates all logs and result files
     '''
 
+    logging.debug("Args received: %s", str(args))
+
     if args['format'] == 'fasta' and args['reference'] == None:
         logging.error("--reference option is REQUIRED when using fasta format input.")
         return 1
