@@ -92,4 +92,19 @@ CREATE TABLE sample_history (
     renamed_at timestamp
 );
 
+-- #################################################################################################
+-- adding trees table
+
+DROP TABLE IF EXISTS trees;
+CREATE TABLE trees (
+    pk_id SERIAL PRIMARY KEY,
+    nwkfile bytea,
+	t5_name integer,
+	sample_set integer[],
+    t50_size integer,
+	mod_date timestamp,
+	created_at timestamp,
+	lockdown boolean DEFAULT FALSE
+);
+
 CREATE EXTENSION intarray;

@@ -18,6 +18,7 @@ import get_closest
 import export_sample_variants
 import get_history
 import make_tree
+import update_db_trees
 
 # -------------------------------------------------------------------------------------------------
 
@@ -136,6 +137,13 @@ def get_args():
                           formatter_class=RawTextHelpFormatter,
                           add_help=False)
 
+    subparsers.add_parser("update_db_trees",
+                          description=update_db_trees.get_desc(),
+                          help="Update the trees stored in a database.",
+                          parents=[update_db_trees.get_args()],
+                          formatter_class=RawTextHelpFormatter,
+                          add_help=False)
+
     return args
 
 # -------------------------------------------------------------------------------------------------
@@ -182,6 +190,8 @@ def main():
         return get_history.main(args)
     elif args["cmd"] == "make_tree":
         return make_tree.main(args)
+    elif args["cmd"] == "update_db_trees":
+        return update_db_trees.main(args)
     return 1
 
 # -------------------------------------------------------------------------------------------------

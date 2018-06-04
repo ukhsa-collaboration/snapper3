@@ -34,7 +34,7 @@ def get_sample_id(cur, name):
     """
 
     # get sample_id name from database
-    sql = "SELECT pk_id FROM samples WHERE sample_name=%s"
+    sql = "SELECT pk_id, ignore_sample FROM samples WHERE sample_name=%s"
     cur.execute(sql, (name, ))
     if cur.rowcount < 1:
         logging.error("A sample with name %s doesn't exist in the database.", name)
@@ -44,10 +44,15 @@ def get_sample_id(cur, name):
         return -1
     else:
         pass
-    sample_id = cur.fetchone()[0]
+    row = cur.fetchone()
+    ign = row['ignore_sample']
+    sample_id = row['pk_id']
+
+    if ign == True:
+        logging.error("The sample with name %s can't be clustered because it is marked as IGNORED. Please contact your system administrator.", name)
+        return -1
 
     return sample_id
-
 
 # --------------------------------------------------------------------------------------------------
 

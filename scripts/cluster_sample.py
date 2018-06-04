@@ -103,7 +103,7 @@ def main(args):
 
         sample_id = sndb.get_sample_id(cur, args['sample_name'])
         if sample_id < 0:
-            logging.error("Could not get sample id from db. :-(")
+            logging.error("Could not find a cluster-able samples with this name.")
             return 1
 
         rc, snadd = sndb.check_duplicate_clustering(cur, sample_id)

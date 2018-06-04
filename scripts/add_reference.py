@@ -59,13 +59,15 @@ def get_args():
                       dest="reference",
                       help="""REQUIRED. Fasta reference file.""")
 
-    args.add_argument("--input",
-                      "-i",
+    args.add_argument("--refvar",
+                      "-v",
                       metavar="JSONFILE",
                       required=True,
                       type=str,
                       dest="input",
-                      help="REQUIRED. Path to a input file.")
+                      help="""REQUIRED. Path to a Phenix-made json file containing variants
+for the reference. Will contain Ns in positions that can't be mapped and these
+will be globally ignored when calculating distances.""")
 
     args.add_argument("--ref-name",
                       "-r",
@@ -74,6 +76,16 @@ def get_args():
                       default=None,
                       dest="ref_name",
                       help="The name of the reference to go into the db [default: reference file name before 1st dot]")
+
+    args.add_argument("--exclude",
+                      "-e",
+                      type=str,
+                      metavar="BEDFILE",
+                      default=None,
+                      dest="exclude",
+                      help="""Provide a bed file with regions to exclude globally. It needs to be a file with the
+three required fields according to the specification (https://genome.ucsc.edu/FAQ/FAQformat.html#format1)
+[default: don't exclude further regions]""")
 
     return args
 
@@ -131,6 +143,14 @@ def main(args):
         if args['ref_name'] == None:
             args['ref_name'] = os.path.basename(args['reference']).split('.')[0]
 
+        # get additional ignore postions from bed file if present
+        exclude_regions = None
+        if args['exclude'] != None:
+            exclude_regions = get_exclude_regions_from_bed(args['exclude'])
+            if exclude_regions == None:
+                logging.error("An error occured with the exclude bed file.")
+                return 1
+
         # ... make an entry in the samples table and get the primary sample id
         sql = "INSERT INTO samples (sample_name, date_added) VALUES (%s, %s) RETURNING pk_id"
         cur.execute(sql, (args['ref_name'], datetime.now(), ))
@@ -149,6 +169,9 @@ def main(args):
             # the reference can't have gaps, gaps in the vcf indicate a region where no reads have mapped back to
             # we treat these as Ns
             ref_ign_pos = set(condata['N']).union(set(condata['-']))
+            # add additional global ignore positions as ref Ns to the database
+            if exclude_regions != None and exclude_regions.has_key(con):
+                ref_ign_pos.update(exclude_regions[con])
 
             # make one entry per contig in the variants table
             sql = "INSERT INTO variants (fk_sample_id, fk_contig_id, n_pos, a_pos, c_pos, g_pos, t_pos, gap_pos) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
@@ -177,6 +200,58 @@ def main(args):
         conn.close()
 
     return 0
+
+# --------------------------------------------------------------------------------------------------
+
+def get_exclude_regions_from_bed(bedfile):
+    """
+    Parse a bed file and get the ignore regions as sets of each position.
+
+    Parameters
+    ----------
+    bedfile: str
+        the name of the bed file
+
+    Returns
+    -------
+    exclude_regions: dict
+        {"contig1": set(1, 2, 3, 4, 5, 8, 9, 10, ...),
+         "contig2": set(11, 12, 13, 14, 15, 18, 19, 110, 111, ...),
+         ...}
+    or None if problem
+    """
+
+    exclude_regions = {}
+    try:
+        with open(bedfile, 'r') as exbedf:
+            for line in exbedf:
+                cols = [x.strip() for x in line.strip().split('\t')]
+                if len(cols) != 3:
+                    logging.error("An error occured with the format of your exclude bed file.")
+                    return None
+                ex_contig = cols[0]
+                try:
+                    _ = contigs[ex_contig]
+                except KeyError:
+                    logging.error("A the contig name %s in the bed file does not correspond to the reference provided.",
+                                  ex_contig)
+                    return None
+                try:
+                    ex_start = int(cols[1]) + 1
+                    ex_stop = int(cols[2])
+                except ValueError:
+                    logging.error("An error occured with the format of your exclude bed file.")
+                    return None
+                try:
+                    exclude_regions[ex_contig].update(range(ex_start, ex_stop + 1))
+                except KeyError:
+                    exclude_regions[ex_contig] = set(range(ex_start, ex_stop + 1))
+
+    except IOError:
+        logging.error("An error occured reading from this file: %s", args['exclude'])
+        return None
+
+    return exclude_regions
 
 # --------------------------------------------------------------------------------------------------
 

@@ -10,6 +10,25 @@ import lib.alignment as align
 
 # --------------------------------------------------------------------------------------------------
 
+class AlignmentPosition(object):
+    """
+    Tiny class to capture some information about a positin in an alignment.
+    Information captured is:
+        - the nucleotide
+        - the contig name
+        - the position in the original reference genome
+    """
+
+    def __init__(self, **kwargs):
+        """
+        Constructor.
+        """
+        self.nuc = kwargs["nuc"]
+        self.contig = kwargs["contig"]
+        self.gp = kwargs["pos"] # gp as in genome position
+
+# --------------------------------------------------------------------------------------------------
+
 def get_desc():
     """
     Get the description of this module
@@ -87,16 +106,16 @@ def get_args():
                       help="Keeps columns with fraction of Ns below specified threshold.")
 
     args.add_argument("--sample-Ns",
-                      help="Keeps samples with fraction of Ns below specified threshold or put 'auto'." + \
-                           "Fraction expressed as fraction of genome. Requires --reflength or --reference.")
+                      help="""Keeps samples with fraction of Ns below specified threshold or put 'auto'.
+Fraction expressed as fraction of genome. Requires --reflength or --reference.""")
     args.add_argument("--sample-gaps",
-                      help="Keeps samples with fraction of gaps below specified threshold or put 'auto'." + \
-                           "Fraction expressed as fraction of genome. Requires --reflength or --reference.")
+                      help="""Keeps samples with fraction of gaps below specified threshold or put 'auto'.
+Fraction expressed as fraction of genome. Requires --reflength or --reference.""")
     args.add_argument("--sample-Ns-gaps-auto-factor",
                       default=2.0,
                       type=float,
-                      help="When using 'auto' option for --sample-gaps or --sample-Ns, remove sample that have" + \
-                           "gaps or Ns this many times above the stddev of all samples. [Default: 2.0]")
+                      help="""When using 'auto' option for --sample-gaps or --sample-Ns, remove sample that have
+gaps or Ns this many times above the stddev of all samples. [Default: 2.0]""")
     args.add_argument("--snp-address",
                       action='store_true',
                       help="Annotate fasta sample header with SNP address where available. [Default: don't]")
@@ -114,6 +133,14 @@ def get_args():
                          help="Only include positions in BED file in the FASTA")
     group_c.add_argument("--exclude",
                          help="Exclude any positions specified in the BED file.")
+
+    args.add_argument("--remove-ref",
+                      choices=['keep', 'invariant', 'invariantn'],
+                      default='keep',
+                      help="""Remove the reference from the alignment at the end and delete
+invariant positions (invariant) or remove all positions
+that are invariant after n and gaps have been removed.
+[Default: keep reference in alignment]""")
 
     return args
 
@@ -312,24 +339,32 @@ def main(args):
                 for nuc in data['reference'].keys():
                     for i in data['reference'][nuc]:
                         seq_pos = all_pos[i]
-                        dAlign[sample_name][seq_pos] = nuc
+                        # use AlignmentPosition to preserve information about the original genome position
+                        dAlign[sample_name][seq_pos] = AlignmentPosition(nuc=nuc, contig=contig, pos=i)
 
             # overwrite reference positions where necessary
             for nuc in data[sample_name].keys():
                 for i in data[sample_name][nuc]:
                     seq_pos = all_pos[i]
-                    dAlign[sample_name][seq_pos] = nuc
+                    # use AlignmentPosition to preserve information about the original genome position
+                    dAlign[sample_name][seq_pos] = AlignmentPosition(nuc=nuc, contig=contig, pos=i)
 
-            seq = ''.join(dAlign[sample_name])
+            #seq = ''.join(dAlign[sample_name])
             try:
-                dSeqs[sample_name] += seq
+                dSeqs[sample_name] += dAlign[sample_name]
             except KeyError:
-                dSeqs[sample_name] = seq
+                dSeqs[sample_name] = dAlign[sample_name]
+
+    if args["remove_ref"] != 'keep':
+        dSeqs = align.remove_reference(dSeqs, args["whole_genome"], args['remove_ref'])
 
     # write to file
     with open(args["out"], "w") as fp:
         # write seqs to file
         for name, seq in dSeqs.iteritems():
+            # seq is a list of AlignmentPosition objects
+            seq = ''.join([x.nuc for x in seq])
+            # now it's a string
             if dSnads != None and dSnads.has_key(name):
                 fp.write(">%s %s\n%s\n" % (name, dSnads[name], seq))
             else:
