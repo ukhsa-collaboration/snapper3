@@ -146,7 +146,7 @@ def main(args):
         # get additional ignore postions from bed file if present
         exclude_regions = None
         if args['exclude'] != None:
-            exclude_regions = get_exclude_regions_from_bed(args['exclude'])
+            exclude_regions = get_exclude_regions_from_bed(args['exclude'], contigs)
             if exclude_regions == None:
                 logging.error("An error occured with the exclude bed file.")
                 return 1
@@ -203,7 +203,7 @@ def main(args):
 
 # --------------------------------------------------------------------------------------------------
 
-def get_exclude_regions_from_bed(bedfile):
+def get_exclude_regions_from_bed(bedfile, contigs):
     """
     Parse a bed file and get the ignore regions as sets of each position.
 
@@ -211,6 +211,8 @@ def get_exclude_regions_from_bed(bedfile):
     ----------
     bedfile: str
         the name of the bed file
+    contigs: dict
+        {contig_name: id, ...}
 
     Returns
     -------
