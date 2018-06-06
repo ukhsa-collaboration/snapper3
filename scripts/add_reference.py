@@ -250,7 +250,7 @@ def get_exclude_regions_from_bed(bedfile, contigs):
                     exclude_regions[ex_contig] = set(range(ex_start, ex_stop + 1))
 
     except IOError:
-        logging.error("An error occured reading from this file: %s", args['exclude'])
+        logging.error("An error occured reading from this file: %s", bedfile)
         return None
 
     return exclude_regions
