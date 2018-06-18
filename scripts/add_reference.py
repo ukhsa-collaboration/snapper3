@@ -228,7 +228,7 @@ def get_exclude_regions_from_bed(bedfile, contigs):
         with open(bedfile, 'r') as exbedf:
             for line in exbedf:
                 cols = [x.strip() for x in line.strip().split('\t')]
-                if len(cols) != 3:
+                if len(cols) < 3:
                     logging.error("An error occured with the format of your exclude bed file.")
                     return None
                 ex_contig = cols[0]
