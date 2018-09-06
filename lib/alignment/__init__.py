@@ -589,6 +589,7 @@ def remove_reference(dSeqs, whole_genome, remove_ref):
                 # if there is nothing left we only had N and - at this position in the alignment
                 if len(posnucs) <= 0:
                     continue
+
             # we'll keep N and - in the alignment so we only need to check that
             # they are not all the same at this position
             else:
@@ -596,6 +597,10 @@ def remove_reference(dSeqs, whole_genome, remove_ref):
 
             # not all the same?
             if len(posnucs) != posnucs.count(posnucs[0]):
+
+                # write the genome position of alignment columns that are being retained to stdout
+                # sys.stdout.write("%i\n" %(gpos[0]))
+
                 for name in dSeqs.keys():
                     dNewseqs[name].append(dSeqs[name][i])
         return dNewseqs

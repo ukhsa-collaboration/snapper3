@@ -7,6 +7,8 @@ author: ulf.schaefer@phe.gov.uk
 
 import logging
 from time import time
+import json
+import gzip
 from operator import itemgetter
 
 # --------------------------------------------------------------------------------------------------
@@ -95,6 +97,42 @@ def get_relevant_distances(cur, sample_id):
     d = get_distances(cur, sample_id, relv_samples)
 
     return d
+
+# --------------------------------------------------------------------------------------------------
+
+def get_missing_distances(cur, sample_id, haves):
+    """
+    Get the distances to this sample that we don't already have from the database.
+
+    Parameters
+    ----------
+    cur: obj
+        database cursor
+    sample_id: int
+        sample pk_id
+    haves: set
+        set of sample ids tuples for which we already have the distance.
+
+    Returns
+    -------
+    d: list of tuples
+        sorted list of tuples with (sample_id, distance) with closes sample first
+        e.g. [(298, 0), (37, 3), (55, 4)]
+        None if fail
+    """
+
+    # get the relevant samples from the database, these are the ones that have been clustered and are not ignored
+    sql = "SELECT c.fk_sample_id FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND s.ignore_sample IS FALSE"
+    cur.execute(sql)
+    rows = cur.fetchall()
+    all_samples = set([r['fk_sample_id'] for r in rows])
+
+    relv_samples = list(all_samples.difference(haves))
+
+    d = get_distances(cur, sample_id, relv_samples)
+
+    return d
+
 
 # --------------------------------------------------------------------------------------------------
 
@@ -209,5 +247,59 @@ def get_distance_matrix(cur, samids):
                 dists[osam] = {s: snpdi}
 
     return dists
+
+# --------------------------------------------------------------------------------------------------
+
+def get_distances_precalc(cur, sam_id, sample_name, json_file_name):
+    """
+    Check the precalculated data against the database, get the missing distances,
+    and add the precalculated ones.
+
+    Parameters
+    ----------
+    cur: obj
+        database cursor
+    sample_id: int
+        sample pk_id
+    sample_name: str
+        samples name
+    json_file_name: str
+        name of a json file containing
+
+    Returns
+    -------
+    d: list of tuples
+        sorted list of tuples with (sample_id, distance) with closes sample first
+        e.g. [(298, 0), (37, 3), (55, 4)]
+        None if fail
+    """
+
+    open_func = gzip.open if json_file_name.endswith('.gz') == True else open
+    precalc_data = None
+    with open_func(json_file_name) as f:
+        precalc_data = json.load(f)
+
+    # chck the sample name in the json against the current sample
+    if precalc_data['sample_name'] != sample_name:
+        logging.error("Sample name does not match precalculated data!")
+        return None
+
+    # check data consistency between the db and the precalculated distances, do samid and samname match?
+    sql = "SELECT c.fk_sample_id AS sid, s.sample_name AS name FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND s.ignore_sample IS FALSE"
+    cur.execute(sql)
+    rows = cur.fetchall()
+    tbl_values = {r['sid']: r['name'] for r in rows}
+    for (pre_id, pre_name, dis) in precalc_data['distances']:
+        if tbl_values[pre_id] != pre_name:
+            logging.error("Precalculated data does not match database. Precalculated samples name for id %i was %s, but in db it's %s",
+                          pre_id, pre_name, tbl_values[pre_id])
+            return None
+
+    # get missing distances, add the precalculated ones and re-sort
+    d = get_missing_distances(cur, sam_id, set([x[0] for x in precalc_data['distances']]))
+    d += [(x[0], x[2]) for x in precalc_data['distances']]
+    d.sort(key=lambda x: x[1])
+
+    return d
 
 # --------------------------------------------------------------------------------------------------

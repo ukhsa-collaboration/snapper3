@@ -8,7 +8,7 @@ from psycopg2.extras import DictCursor
 import lib.snapperdb as sndb
 import lib.registration as regis
 import lib.merging as merging
-from lib.distances import get_all_pw_dists, get_relevant_distances
+from lib.distances import get_all_pw_dists, get_relevant_distances, get_distances_precalc
 
 # --------------------------------------------------------------------------------------------------
 
@@ -61,6 +61,15 @@ def get_args():
                       dest="sample_name",
                       help="The name of the sample to go into the db. REQUIRED.")
 
+    args.add_argument("--precalc-distances",
+                      "-p",
+                      type=str,
+                      metavar="JSONFILE",
+                      default=None,
+                      dest="precalc",
+                      help="""Json file with precalculated distances.
+[Default: None => calculate all distances on the db server now]""")
+
     args.add_argument("--no-zscore-check",
                       action='store_true',
                       help="""Do not perform checks and just add the sample. It's fine.
@@ -75,8 +84,6 @@ and update the cluster stats. [Default: Do not register.]""")
                       action='store_true',
                       help="""Add the sample even if it causes clusters to merge.
 [Default: Do not add if merge required.]""")
-
-
 
     return args
 
@@ -117,7 +124,11 @@ def main(args):
         logging.info("Processing sample %s with id %i", args['sample_name'], sample_id)
         logging.info("Calculating distances to all other samples now. Patience!")
 
-        distances = get_relevant_distances(cur, sample_id)
+        if args['precalc'] == None:
+            distances = get_relevant_distances(cur, sample_id)
+        else:
+            distances = get_distances_precalc(cur, sample_id, args['sample_name'], args['precalc'])
+
         if distances == None:
             logging.error("Could not get distances from db. :-(")
             return 1
