@@ -330,8 +330,8 @@ def main(args):
                 # copy of the reference string for all samples
                 # dAlign[sample_name] = args["reference"][contig]
                 dAlign[sample_name] = []
-                for s in args["reference"][contig]:
-                    dAlign[sample_name].append(s)
+                for i, s in enumerate(args["reference"][contig]):
+                    dAlign[sample_name].append(AlignmentPosition(nuc=s, contig=contig, pos=i+1))
             else:
                 # initialies with 0's
                 dAlign[sample_name] = ['0'] * len(all_pos)
