@@ -146,7 +146,7 @@ def main(args):
         # get additional ignore postions from bed file if present
         exclude_regions = None
         if args['exclude'] != None:
-            exclude_regions = get_exclude_regions_from_bed(args['exclude'])
+            exclude_regions = get_exclude_regions_from_bed(args['exclude'], contigs)
             if exclude_regions == None:
                 logging.error("An error occured with the exclude bed file.")
                 return 1
@@ -203,7 +203,7 @@ def main(args):
 
 # --------------------------------------------------------------------------------------------------
 
-def get_exclude_regions_from_bed(bedfile):
+def get_exclude_regions_from_bed(bedfile, contigs):
     """
     Parse a bed file and get the ignore regions as sets of each position.
 
@@ -211,6 +211,8 @@ def get_exclude_regions_from_bed(bedfile):
     ----------
     bedfile: str
         the name of the bed file
+    contigs: dict
+        {contig_name: id, ...}
 
     Returns
     -------
@@ -226,7 +228,7 @@ def get_exclude_regions_from_bed(bedfile):
         with open(bedfile, 'r') as exbedf:
             for line in exbedf:
                 cols = [x.strip() for x in line.strip().split('\t')]
-                if len(cols) != 3:
+                if len(cols) < 3:
                     logging.error("An error occured with the format of your exclude bed file.")
                     return None
                 ex_contig = cols[0]
@@ -248,7 +250,7 @@ def get_exclude_regions_from_bed(bedfile):
                     exclude_regions[ex_contig] = set(range(ex_start, ex_stop + 1))
 
     except IOError:
-        logging.error("An error occured reading from this file: %s", args['exclude'])
+        logging.error("An error occured reading from this file: %s", bedfile)
         return None
 
     return exclude_regions
