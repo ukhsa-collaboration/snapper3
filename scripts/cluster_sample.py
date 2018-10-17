@@ -1,5 +1,6 @@
 import logging
 
+import requests
 import argparse
 from argparse import RawTextHelpFormatter
 import psycopg2
@@ -8,7 +9,8 @@ from psycopg2.extras import DictCursor
 import lib.snapperdb as sndb
 import lib.registration as regis
 import lib.merging as merging
-from lib.distances import get_all_pw_dists, get_relevant_distances, get_distances_precalc
+from lib.distances import get_all_pw_dists, get_relevant_distances
+from lib.distances import get_distances_precalc, get_distances_fusion
 
 # --------------------------------------------------------------------------------------------------
 
@@ -121,16 +123,23 @@ def main(args):
                           snadd)
             return 1
 
+        if args['precalc'] != None and args['fusion'] != None:
+            logging.error("Parameters --precalc-distances and --fusion are mutually exclusive. Use only one of them (or neither).")
+            return 1
+
         logging.info("Processing sample %s with id %i", args['sample_name'], sample_id)
         logging.info("Calculating distances to all other samples now. Patience!")
 
-        if args['precalc'] == None:
-            distances = get_relevant_distances(cur, sample_id)
-        else:
+        # calculate the relevant distances
+        if args['precalc'] != None:
             distances = get_distances_precalc(cur, sample_id, args['sample_name'], args['precalc'])
+        elif args['fusion'] != None:
+            distances = get_distances_fusion(cur, sample_id, args['fusion'])
+        else:
+            distances = get_relevant_distances(cur, sample_id)
 
         if distances == None:
-            logging.error("Could not get distances from db. :-(")
+            logging.error("Could not get distances. :-(")
             return 1
 
         logging.debug("Distances calculated: %s", str(distances))
@@ -147,11 +156,18 @@ def main(args):
         new_snad = sndb.get_new_snp_address(nbhood)
 
         logging.info("Proposed SNP address for this sample: %s-%s-%s-%s-%s-%s-%s",
-                      new_snad[6], new_snad[5], new_snad[4], new_snad[3], new_snad[2], new_snad[1], new_snad[0])
+                      new_snad[6],
+                      new_snad[5],
+                      new_snad[4],
+                      new_snad[3],
+                      new_snad[2],
+                      new_snad[1],
+                      new_snad[0])
 
         merges = merging.check_merging_needed(cur, distances, new_snad)
 
-        logging.info("Merges that would be required to make this assignment: %s", str([str(m) for m in merges.values()]))
+        logging.info("Merges that would be required to make this assignment: %s",
+                     str([str(m) for m in merges.values()]))
 
         if args['force_merge'] == False and len(merges.keys()) > 0:
             logging.info("Exiting becaues there are merges. Database is not updated. Use --force-merge to add the sample (after checking it).")
@@ -174,19 +190,25 @@ def main(args):
         else:
             logging.info("User disabled z-score checks for this assignment.")
 
-        logging.debug("Merges that would be required to make this assignment: %s", str([str(m) for m in merges.values()]))
+        logging.debug("Merges that would be required to make this assignment: %s",
+                      str([str(m) for m in merges.values()]))
 
         if args['with_registration'] == True:
 
             levels = [0, 5, 10, 25, 50, 100, 250]
             for lvl in merges.keys():
                 merging.do_the_merge(cur, merges[lvl])
-                # If merging cluster a and b, the final name of the merged cluster can be either a or b.
-                # So we need to make sure the cluster gets registered into the final name of the cluster
-                # and not into the cluster that has been deleted in the merge operation.
+                # If merging cluster a and b, the final name of the merged cluster can be either
+                # a or b. So we need to make sure the cluster gets registered into the final name
+                # of the cluster and not into the cluster that has been deleted in the merge
+                # operation.
                 new_snad[levels.index(lvl)] = merges[lvl].final_name
 
-            final_snad = regis.register_sample(cur, sample_id, distances, new_snad, args['no_zscore_check'])
+            final_snad = regis.register_sample(cur,
+                                               sample_id,
+                                               distances,
+                                               new_snad,
+                                               args['no_zscore_check'])
 
             if final_snad != None:
                 logging.info("Sample %s with sample_id %s was registered in the database with SNP address: %s-%s-%s-%s-%s-%s-%s",
@@ -206,7 +228,8 @@ def main(args):
                     cur.execute(sql, (sample_id, ))
 
             else:
-                logging.error("Registration of sample %s in database FAILED! Database is not updated.", sample_id)
+                logging.error("Registration of sample %s in database FAILED! Database is not updated.",
+                              sample_id)
                 return 1
         else:
             logging.info("User requested sample NOT to be registered in the database.")

@@ -45,7 +45,7 @@ def parse_args():
                         metavar="JSONFILE",
                         required=True,
                         dest="vars",
-                        help="Variants for this sample as PHEnix make jsons file. REQUIRED.")
+                        help="Variants for this sample as PHEnix made json file. REQUIRED.")
 
     parser.add_argument("--sample_name",
                         "-s",

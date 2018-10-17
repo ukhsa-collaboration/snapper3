@@ -4,6 +4,7 @@ import gzip
 import re
 import os
 from datetime import datetime
+import requests
 
 import argparse
 from argparse import RawTextHelpFormatter
@@ -205,6 +206,7 @@ def main(args):
 
         logging.info("Created new sampe with id %s. ", sample_pkid)
 
+        payload = {}
         for con, condata in data['positions'].iteritems():
             # get the pk of this contig
             try:
@@ -239,6 +241,15 @@ def main(args):
             sql = "INSERT INTO variants (fk_sample_id, fk_contig_id, a_pos, c_pos, g_pos, t_pos, n_pos, gap_pos) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
             cur.execute(sql, (sample_pkid, contig_pkid, list(a_pos), list(c_pos), list(g_pos), list(t_pos), list(n_pos), list(gap_pos), ))
 
+            # We're remembering what we put in the db in case it needs to go into fusion. If it does
+            # not go into fusion this is never used and (a hopefully affordable) waste of memory.
+            payload[contig_pkid] = {"A": list(a_pos),
+                                    "C": list(c_pos),
+                                    "G": list(g_pos),
+                                    "T": list(t_pos),
+                                    "N": list(n_pos),
+                                    "-": list(gap_pos)}
+
             logging.info("Inserted for contig %s : As: %s, Cs: %s:, Gs: %s, Ts: %s, Ns: %s, gaps: %s",
                          contig_pkid,
                          len(a_pos),
@@ -259,6 +270,9 @@ def main(args):
 
         conn.commit()
 
+        if args['fusion'] != None:
+            add_sample_to_fusion(args['fusion'], sample_pkid, payload)
+
     except psycopg2.Error as e:
          logging.error("Database reported error: %s" % (str(e)))
     finally:
@@ -269,6 +283,39 @@ def main(args):
     return 0
 
 # --------------------------------------------------------------------------------------------------
+
+def add_sample_to_fusion(url, sample_name, payload):
+    '''
+    Send a request to the fusion server to add this sample.
+
+    Parameters
+    ----------
+    url: str
+        the url of the fusion server
+    sample_name: str
+        yes
+    payload: dict
+        payload[contig_pkid] = {"A": list(a_pos),
+                                "C": list(c_pos),
+                                "G": list(g_pos),
+                                "T": list(t_pos),
+                                "N": list(n_pos),
+                                "-": list(gap_pos)}
+
+    Returns
+    -------
+    always 0
+        pay attention to the logging output
+    '''
+    res = requests.post('%s/store_sample/%s' % (url, sample_name), json=payload)
+    if res.status_code != 200:
+        logging.error("There was a problem storing the sample in fusion. Consult fusion server logs")
+    else:
+        logging.info("Sample %s was successfully stored in fusion webservice %s.", sample_name, url)
+    return 0
+
+# --------------------------------------------------------------------------------------------------
+
 
 if __name__ == "__main__":
     exit(main(vars(get_args().parse_args())))

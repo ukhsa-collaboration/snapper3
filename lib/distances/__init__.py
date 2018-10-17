@@ -11,12 +11,37 @@ import json
 import gzip
 from operator import itemgetter
 
+import requests
+
+# --------------------------------------------------------------------------------------------------
+
+def get_relevant_samples(cur):
+    """
+    Get the relevant samples from the database, these are the ones that have been clustered and are not ignored
+
+    Parameters
+    ----------
+    cur: obj
+        database cursor
+
+    Returns
+    -------
+    relv_samples: list
+        list of ints which are the sample ids
+    """
+    # get the relevant samples from the database, these are the ones that have been clustered and are not ignored
+    sql = "SELECT c.fk_sample_id FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND s.ignore_sample IS FALSE"
+    cur.execute(sql)
+    rows = cur.fetchall()
+    relv_samples = [r['fk_sample_id'] for r in rows]
+    logging.info("Found %i samples in the database relavant for clustering.", len(relv_samples))
+    return relv_samples
+
 # --------------------------------------------------------------------------------------------------
 
 def get_all_pw_dists(cur, samids):
     """
     Get all pairwise distances between the samples in the input list.
-
 
     Parameters
     ----------
@@ -88,12 +113,7 @@ def get_relevant_distances(cur, sample_id):
         None if fail
     """
 
-    # get the relevant samples from the database, these are the ones that have been clustered and are not ignored
-    sql = "SELECT c.fk_sample_id FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND s.ignore_sample IS FALSE"
-    cur.execute(sql)
-    rows = cur.fetchall()
-    relv_samples = [r['fk_sample_id'] for r in rows]
-
+    relv_samples = get_relevant_samples(cur)
     d = get_distances(cur, sample_id, relv_samples)
 
     return d
@@ -121,14 +141,8 @@ def get_missing_distances(cur, sample_id, haves):
         None if fail
     """
 
-    # get the relevant samples from the database, these are the ones that have been clustered and are not ignored
-    sql = "SELECT c.fk_sample_id FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND s.ignore_sample IS FALSE"
-    cur.execute(sql)
-    rows = cur.fetchall()
-    all_samples = set([r['fk_sample_id'] for r in rows])
-
+    all_samples = set(get_relevant_samples(cur))
     relv_samples = list(all_samples.difference(haves))
-
     d = get_distances(cur, sample_id, relv_samples)
 
     return d
@@ -301,5 +315,56 @@ def get_distances_precalc(cur, sam_id, sample_name, json_file_name):
     d.sort(key=lambda x: x[1])
 
     return d
+
+# --------------------------------------------------------------------------------------------------
+
+def get_distances_fusion(cur, sample_id, fusion_url):
+    """
+    Get the relevant distances back from the fusion web service.
+
+    Parameters
+    ----------
+    cur: obj
+        database cursor
+    sample_id: int
+        sample pk_id
+    fusion_url: str
+        the url of the fusion webservice master
+
+    Returns
+    -------
+    d: list of tuples
+        sorted list of tuples with (sample_id, distance) with closes sample first
+        e.g. [(298, 0), (37, 3), (55, 4)]
+        None if fail
+    """
+
+    relv_samples = get_relevant_samples(cur)
+
+    tic = time()
+
+    res = requests.post('%s/some_distances/%s' % (fusion_url, sample_id),
+                        json=[str(x) for x in relv_samples],
+                        headers={'Cache-Control': 'no-cache'})
+
+    toc = time()
+
+    if res.status_code != 200:
+        logging.error("There was a problem getting the distances from fusion.")
+        logging.error("Please consult fusion server logs.")
+        return None
+
+    data = res.json()
+    logging.info("%i distances for sample %s were successfully calculated by fusion webservice %s in %.3f secs.",
+                 len(data['distances']),
+                 sample_id,
+                 fusion_url,
+                 toc - tic)
+
+    if len(data['missing_samples']) > 0:
+        logging.error("The distances to the following samples could not be calculated: %s",
+                      str(data['missing_samples']))
+
+    return [(int(x[0]), x[1]) for x in data['distances']]
 
 # --------------------------------------------------------------------------------------------------

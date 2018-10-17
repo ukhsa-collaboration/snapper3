@@ -72,6 +72,15 @@ def get_args():
                       action="version",
                       version=get_version())
 
+    args.add_argument("--fusion",
+                      type=str,
+                      metavar="FUSIONURL",
+                      default=None,
+                      dest="fusion",
+                      help="""URL of the Fusion webservice for this database (if available) for
+extra speedy massively scalable distance calculations. E.g.: 'http://158.119.199.199:9000'
+[Default: Nevermind. It works fine without.]""")
+
     subparsers = args.add_subparsers(dest='cmd')
 
     subparsers.add_parser("add_sample",
