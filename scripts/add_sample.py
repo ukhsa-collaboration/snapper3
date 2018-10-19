@@ -1,13 +1,11 @@
-import json
 import logging
-import gzip
 import re
 import os
 from datetime import datetime
-import requests
-
 import argparse
 from argparse import RawTextHelpFormatter
+
+import requests
 import psycopg2
 from psycopg2.extras import DictCursor
 
@@ -177,7 +175,7 @@ def main(args):
     ngs_id = None
     molis_id = None
     # if this is the format <int>_H<int>-[12] add ngs_id and molis_id into db
-    pat="^[0-9]+_H[0-9]+-[12]$"
+    pat = "^[0-9]+_H[0-9]+-[12]$"
     if re.search(pat, args['sample_name']) != None:
         ngs_id = int(args['sample_name'].split('_')[0])
         molis_id = args['sample_name'].split('_')[1][:-2]
@@ -219,7 +217,9 @@ def main(args):
             sql = "SELECT v.n_pos FROM variants v, samples s WHERE v.fk_sample_id=s.pk_id AND s.sample_name=%s AND v.fk_contig_id=%s"
             cur.execute(sql, (args['refname'], contig_pkid, ))
             if cur.rowcount != 1:
-                logging.error("Not exactly one row found in variants for sample %s and contig id %s.", args['refname'], contig_pkid)
+                logging.error("Not exactly one row found in variants for sample %s and contig id %s.",
+                              args['refname'],
+                              contig_pkid)
                 return 1
             res = cur.fetchone()[0]
             if res == None:
@@ -239,7 +239,14 @@ def main(args):
             gap_pos = set(condata['-']) - ref_ign_pos
 
             sql = "INSERT INTO variants (fk_sample_id, fk_contig_id, a_pos, c_pos, g_pos, t_pos, n_pos, gap_pos) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
-            cur.execute(sql, (sample_pkid, contig_pkid, list(a_pos), list(c_pos), list(g_pos), list(t_pos), list(n_pos), list(gap_pos), ))
+            cur.execute(sql, (sample_pkid,
+                              contig_pkid,
+                              list(a_pos),
+                              list(c_pos),
+                              list(g_pos),
+                              list(t_pos),
+                              list(n_pos),
+                              list(gap_pos), ))
 
             # We're remembering what we put in the db in case it needs to go into fusion. If it does
             # not go into fusion this is never used and (a hopefully affordable) waste of memory.
@@ -266,7 +273,8 @@ def main(args):
             for mc in missing_contigs:
                 sql = "INSERT INTO variants (fk_sample_id, fk_contig_id, a_pos, c_pos, g_pos, t_pos, n_pos, gap_pos) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
                 cur.execute(sql, (sample_pkid, contigs[mc], [], [], [], [], [], [], ))
-                logging.info("Inserted for contig %s : As: %i, Cs: %i:, Gs: %i, Ts: %i, Ns: %i, gaps: %i", contigs[mc], 0, 0, 0, 0, 0, 0)
+                logging.info("Inserted for contig %s : As: %i, Cs: %i:, Gs: %i, Ts: %i, Ns: %i, gaps: %i",
+                             contigs[mc], 0, 0, 0, 0, 0, 0)
 
         conn.commit()
 
@@ -274,7 +282,7 @@ def main(args):
             add_sample_to_fusion(args['fusion'], sample_pkid, payload)
 
     except psycopg2.Error as e:
-         logging.error("Database reported error: %s" % (str(e)))
+        logging.error("Database reported error: %s", str(e))
     finally:
         # close all dbs
         cur.close()
@@ -307,7 +315,9 @@ def add_sample_to_fusion(url, sample_name, payload):
     always 0
         pay attention to the logging output
     '''
-    res = requests.post('%s/store_sample/%s' % (url, sample_name), json=payload)
+    res = requests.post('%s/store_sample/%s' % (url, sample_name),
+                        json=payload,
+                        headers={'Cache-Control': 'no-cache'})
     if res.status_code != 200:
         logging.error("There was a problem storing the sample in fusion. Consult fusion server logs")
     else:
@@ -315,7 +325,6 @@ def add_sample_to_fusion(url, sample_name, payload):
     return 0
 
 # --------------------------------------------------------------------------------------------------
-
 
 if __name__ == "__main__":
     exit(main(vars(get_args().parse_args())))

@@ -1,6 +1,5 @@
 import logging
 
-import requests
 import argparse
 from argparse import RawTextHelpFormatter
 import psycopg2
@@ -9,8 +8,8 @@ from psycopg2.extras import DictCursor
 import lib.snapperdb as sndb
 import lib.registration as regis
 import lib.merging as merging
-from lib.distances import get_all_pw_dists, get_relevant_distances
-from lib.distances import get_distances_precalc, get_distances_fusion
+from lib.distances import get_all_pw_dists, get_relevant_distances, get_distances_precalc
+from lib.distances import get_distances_fusion, get_relevant_distances_fusion
 
 # --------------------------------------------------------------------------------------------------
 
@@ -124,7 +123,8 @@ def main(args):
             return 1
 
         if args['precalc'] != None and args['fusion'] != None:
-            logging.error("Parameters --precalc-distances and --fusion are mutually exclusive. Use only one of them (or neither).")
+            logging.error(("Parameters --precalc-distances and --fusion are "
+                           "mutually exclusive. Use only one of them (or neither)."))
             return 1
 
         logging.info("Processing sample %s with id %i", args['sample_name'], sample_id)
@@ -134,7 +134,7 @@ def main(args):
         if args['precalc'] != None:
             distances = get_distances_precalc(cur, sample_id, args['sample_name'], args['precalc'])
         elif args['fusion'] != None:
-            distances = get_distances_fusion(cur, sample_id, args['fusion'])
+            distances = get_relevant_distances_fusion(cur, sample_id, args['fusion'])
         else:
             distances = get_relevant_distances(cur, sample_id)
 
@@ -145,24 +145,24 @@ def main(args):
         logging.debug("Distances calculated: %s", str(distances))
 
         nbhood = sndb.get_closest_samples(cur, distances)
-        """
-        nbhood = {'closest_distance': int,
-                  'nearest_t': int,
-                  'closest_sample': int,
-                  'closest_snad': [list of 7 ints]}
-        """
+
+        # nbhood = {'closest_distance': int,
+        #           'nearest_t': int,
+        #           'closest_sample': int,
+        #           'closest_snad': [list of 7 ints]}
+
         logging.debug("Sample neighbourhood: %s", str(nbhood))
 
         new_snad = sndb.get_new_snp_address(nbhood)
 
         logging.info("Proposed SNP address for this sample: %s-%s-%s-%s-%s-%s-%s",
-                      new_snad[6],
-                      new_snad[5],
-                      new_snad[4],
-                      new_snad[3],
-                      new_snad[2],
-                      new_snad[1],
-                      new_snad[0])
+                     new_snad[6],
+                     new_snad[5],
+                     new_snad[4],
+                     new_snad[3],
+                     new_snad[2],
+                     new_snad[1],
+                     new_snad[0])
 
         merges = merging.check_merging_needed(cur, distances, new_snad)
 
@@ -170,7 +170,8 @@ def main(args):
                      str([str(m) for m in merges.values()]))
 
         if args['force_merge'] == False and len(merges.keys()) > 0:
-            logging.info("Exiting becaues there are merges. Database is not updated. Use --force-merge to add the sample (after checking it).")
+            logging.info("Exiting becaues there are merges. Database is not updated. "
+                         "Use --force-merge to add the sample (after checking it).")
             return 1
 
         if args['no_zscore_check'] == False:
@@ -183,7 +184,7 @@ def main(args):
             if zscore_fail == True:
                 for s in zscore_info:
                     logging.info(s)
-                logging.error("z-score check for this assignment has failed. Database is not updated.")
+                logging.error("z-score check for this assignment has failed. DB is not updated.")
                 return 1
 
             logging.info("All z-score checks passed for this assignment.")
@@ -211,7 +212,8 @@ def main(args):
                                                args['no_zscore_check'])
 
             if final_snad != None:
-                logging.info("Sample %s with sample_id %s was registered in the database with SNP address: %s-%s-%s-%s-%s-%s-%s",
+                logging.info(("Sample %s with sample_id %s was registered in the "
+                              "database with SNP address: %s-%s-%s-%s-%s-%s-%s"),
                              args['sample_name'],
                              sample_id,
                              final_snad[6],
@@ -222,13 +224,14 @@ def main(args):
                              final_snad[1],
                              final_snad[0])
 
-                # if we did not do zscore checks, because the sample would fail, we need to ignore it in the future
+                # if we did not do zscore checks, because the sample would fail,
+                # we need to ignore it in the future
                 if args['no_zscore_check'] == True:
                     sql = "UPDATE samples SET ignore_zscore=TRUE WHERE pk_id=%s"
                     cur.execute(sql, (sample_id, ))
 
             else:
-                logging.error("Registration of sample %s in database FAILED! Database is not updated.",
+                logging.error("Registration of sample %s in database FAILED! DB is not updated.",
                               sample_id)
                 return 1
         else:
@@ -237,7 +240,7 @@ def main(args):
         conn.commit()
 
     except psycopg2.Error as e:
-         logging.error("Database reported error: %s" % (str(e)))
+        logging.error("Database reported error: %s" % (str(e)))
     finally:
         # close all dbs
         cur.close()

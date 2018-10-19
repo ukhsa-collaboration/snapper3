@@ -147,7 +147,6 @@ def get_missing_distances(cur, sample_id, haves):
 
     return d
 
-
 # --------------------------------------------------------------------------------------------------
 
 def get_distances(cur, samid, others):
@@ -183,7 +182,8 @@ def get_distances(cur, samid, others):
         cur.callproc("get_sample_distances_by_id", [samid, cid, others])
         result = cur.fetchall()
         t1 = time()
-        logging.info("Calculated %i distances on contig %i with 'get_sample_distances_by_id' in %.3f seconds", len(result), cid, t1 - t0)
+        logging.info("Calculated %i distances on contig %i with 'get_sample_distances_by_id' in %.3f seconds",
+                     len(result), cid, t1 - t0)
 
         # sum up if there are more than one contigs
         for res in result:
@@ -303,7 +303,7 @@ def get_distances_precalc(cur, sam_id, sample_name, json_file_name):
     cur.execute(sql)
     rows = cur.fetchall()
     tbl_values = {r['sid']: r['name'] for r in rows}
-    for (pre_id, pre_name, dis) in precalc_data['distances']:
+    for (pre_id, pre_name, _) in precalc_data['distances']:
         if tbl_values[pre_id] != pre_name:
             logging.error("Precalculated data does not match database. Precalculated samples name for id %i was %s, but in db it's %s",
                           pre_id, pre_name, tbl_values[pre_id])
@@ -318,7 +318,7 @@ def get_distances_precalc(cur, sam_id, sample_name, json_file_name):
 
 # --------------------------------------------------------------------------------------------------
 
-def get_distances_fusion(cur, sample_id, fusion_url):
+def get_relevant_distances_fusion(cur, sample_id, fusion_url):
     """
     Get the relevant distances back from the fusion web service.
 
@@ -368,3 +368,118 @@ def get_distances_fusion(cur, sample_id, fusion_url):
     return [(int(x[0]), x[1]) for x in data['distances']]
 
 # --------------------------------------------------------------------------------------------------
+
+def get_distances_fusion(sample_id, others, fusion_url):
+    """
+    Get the distances from sample_id to the otehr samples back from the fusion web service.
+
+    Parameters
+    ----------
+    sample_id: int
+        sample pk_id
+    others: list
+        list of other samples
+    fusion_url: str
+        the url of the fusion webservice master
+
+    Returns
+    -------
+    d: list of tuples
+        sorted list of tuples with (sample_id, distance) with closes sample first
+        e.g. [(298, 0), (37, 3), (55, 4)]
+        None if fail
+    """
+
+    tic = time()
+
+    res = requests.post('%s/some_distances/%s' % (fusion_url, sample_id),
+                        json=[str(x) for x in others],
+                        headers={'Cache-Control': 'no-cache'})
+
+    toc = time()
+
+    if res.status_code != 200:
+        logging.error("There was a problem getting the distances from fusion.")
+        logging.error("Please consult fusion server logs.")
+        return None
+
+    data = res.json()
+    logging.info("%i distances for sample %s were successfully calculated by fusion webservice %s in %.3f secs.",
+                 len(data['distances']),
+                 sample_id,
+                 fusion_url,
+                 toc - tic)
+
+    if len(data['missing_samples']) > 0:
+        logging.error("The distances to the following samples could not be calculated: %s",
+                      str(data['missing_samples']))
+
+    try:
+        result = [(int(x[0]), x[1]) for x in data['distances']]
+    except ValueError as err:
+        logging.error("Sample names in fusion must be pk_id of sample from db.")
+        logging.error("They are not. Details: %s", str(err))
+        return None
+
+    return result
+
+# --------------------------------------------------------------------------------------------------
+
+def get_distance_matrix_fusion(samids, fusion_url):
+    """
+    Get a distance matrix for the given samples.
+
+    Parameters
+    ----------
+    samids: int
+        list of sample pk_ids
+    fusion_url: str
+        url of fusion webservice master
+
+    Returns
+    -------
+    dm: dict
+        complete matrix
+        dm[s1][s2] = d
+        dm[s2][s1] = d
+    """
+
+    tic = time()
+
+    res = requests.post('%s/distance_matrix' % (fusion_url),
+                        json=[str(x) for x in samids],
+                        headers={'Cache-Control': 'no-cache'})
+
+    toc = time()
+
+    if res.status_code != 200:
+        logging.error("There was a problem getting the distance matrix from fusion.")
+        logging.error("Please consult fusion server logs.")
+        return None
+
+    data = res.json()
+
+    if len(data['missing_samples']) > 0:
+        logging.error("The following samples are missing from the matrix: %s",
+                      str(data['missing_samples']))
+
+    nof_sams = len(samids) - len(data['missing_samples'])
+    nofdis = ((nof_sams ** 2) - nof_sams) / 2
+    logging.info("%i distances in the matrix were successfully calculated by fusion webservice %s in %.3f secs.",
+                 nofdis,
+                 fusion_url,
+                 toc - tic)
+
+    # convert all sample names to int type as is expected by snapper
+    dm = {}
+    try:
+        for k, v in data['dm'].iteritems():
+            dm[int(k)] = {int(x): y for x, y in v.iteritems()}
+    except ValueError as err:
+        logging.error("Sample names in fusion must be pk_id of sample from db.")
+        logging.error("They are not. Details: %s", str(err))
+        return None
+
+    return dm
+
+# ==================================================================================================

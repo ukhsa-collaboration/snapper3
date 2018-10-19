@@ -7,7 +7,6 @@ Module for accessing the SnapperDB3 database.
 
 import logging
 import subprocess
-import sys
 import tempfile
 import os
 import shutil
@@ -16,6 +15,8 @@ import psycopg2
 from psycopg2.extras import DictCursor
 
 from lib.distances import get_distances, get_relevant_distances, get_distance_matrix
+from lib.distances import get_distances_fusion, get_relevant_distances_fusion
+from lib.distances import get_distance_matrix_fusion
 from lib.utils import get_closest_threshold
 
 import get_alignment
@@ -49,10 +50,20 @@ class SnapperDBInterrogation(object):
 
         Parameters:
         -----------
+        kwargs:
+            can have: fusion
+            most have: either conn_string
+                       or all of these: "host", "dbname", "user", "password"
 
         """
 
+        self.conn = None
+        self.cur = None
         self.connstring = None
+        self.fusion_url = None
+
+        if kwargs.has_key('fusion') == True:
+            self.fusion_url = kwargs['fusion']
 
         if kwargs.has_key('conn_string'):
             self.connstring = kwargs['conn_string']
@@ -146,9 +157,10 @@ class SnapperDBInterrogation(object):
 
         # get the snp address of the query sample
         sql = "SELECT s.pk_id, c.t0, c.t5, c.t10, c.t25, c.t50, c.t100, c.t250 FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND s.sample_name=%s"
-        self.cur.execute(sql,(sam_name, ))
+        self.cur.execute(sql, (sam_name, ))
         if self.cur.rowcount < 1:
-            raise SnapperDBInterrogationError("No clustering information found for sample %s" % (sam_name))
+            raise SnapperDBInterrogationError("No clustering information found for sample %s"
+                                              % (sam_name))
         row = self.cur.fetchone()
         snad = [row['t0'], row['t5'], row['t10'], row['t25'], row['t50'], row['t100'], row['t250']]
         samid = row['pk_id']
@@ -173,12 +185,18 @@ class SnapperDBInterrogation(object):
 
         distances = None
         if len(close_samples) < neighbours:
-            distances = get_relevant_distances(self.cur, samid)
+            if self.fusion_url == None:
+                distances = get_relevant_distances(self.cur, samid)
+            else:
+                distances = get_relevant_distances_fusion(self.cur, samid, self.fusion_url)
             sql = "SELECT pk_id, sample_name FROM samples"
             self.cur.execute(sql)
             id2name = {r['pk_id']: r['sample_name'] for r in self.cur.fetchall()}
         else:
-            distances = get_distances(self.cur, samid, list(close_samples))
+            if self.fusion_url == None:
+                distances = get_distances(self.cur, samid, list(close_samples))
+            else:
+                distances = get_distances_fusion(samid, list(close_samples), self.fusion_url)
         result_samples = distances[:neighbours]
 
         for (sa, di) in distances[neighbours:]:
@@ -212,9 +230,10 @@ class SnapperDBInterrogation(object):
 
         # get the snp address of the query sample
         sql = "SELECT s.pk_id, c.t0, c.t5, c.t10, c.t25, c.t50, c.t100, c.t250 FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND s.sample_name=%s"
-        self.cur.execute(sql,(sam_name, ))
+        self.cur.execute(sql, (sam_name, ))
         if self.cur.rowcount < 1:
-            raise SnapperDBInterrogationError("No clustering information found for sample %s" % (sam_name))
+            raise SnapperDBInterrogationError("No clustering information found for sample %s"
+                                              % (sam_name))
         row = self.cur.fetchone()
         snad = [row['t0'], row['t5'], row['t10'], row['t25'], row['t50'], row['t100'], row['t250']]
         samid = row['pk_id']
@@ -244,7 +263,10 @@ class SnapperDBInterrogation(object):
             return []
         else:
             logging.info("Calculating distances to %i samples.", len(neighbours))
-            distances = get_distances(self.cur, samid, neighbours)
+            if self.fusion_url == None:
+                distances = get_distances(self.cur, samid, neighbours)
+            else:
+                distances = get_distances_fusion(samid, neighbours, self.fusion_url)
             result_samples = [(id2name[s], d) for (s, d) in distances if d <= dis]
             if len(result_samples) <= 0:
                 logging.info("No samples found this close to the query sample.")
@@ -270,12 +292,20 @@ class SnapperDBInterrogation(object):
         sql = "SELECT c.t0, c.t5, c.t10, c.t25, c.t50, c.t100, c.t250 FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND s.sample_name=%s"
         self.cur.execute(sql, (sam_name, ))
         if self.cur.rowcount < 1:
-            raise SnapperDBInterrogationError("No clustering information found for sample %s" % (sam_name))
+            raise SnapperDBInterrogationError("No clustering information found for sample %s"
+                                              % (sam_name))
         elif self.cur.rowcount > 1:
-            raise SnapperDBInterrogationError("Too much clustering information found for sample %s" % (sam_name))
+            raise SnapperDBInterrogationError("Too much clustering information found for sample %s"
+                                              % (sam_name))
         else:
             row = self.cur.fetchone()
-            return "%i.%i.%i.%i.%i.%i.%i" % (row['t250'], row['t100'], row['t50'], row['t25'], row['t10'], row['t5'], row['t0'])
+            return "%i.%i.%i.%i.%i.%i.%i" % (row['t250'],
+                                             row['t100'],
+                                             row['t50'],
+                                             row['t25'],
+                                             row['t10'],
+                                             row['t5'],
+                                             row['t0'])
 
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -297,9 +327,11 @@ class SnapperDBInterrogation(object):
         sql = "SELECT c.t0, c.t5, c.t10, c.t25, c.t50, c.t100, c.t250 FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND s.sample_name=%s"
         self.cur.execute(sql, (sam_name, ))
         if self.cur.rowcount < 1:
-            raise SnapperDBInterrogationError("No clustering information found for sample %s" % (sam_name))
+            raise SnapperDBInterrogationError("No clustering information found for sample %s"
+                                              % (sam_name))
         elif self.cur.rowcount > 1:
-            raise SnapperDBInterrogationError("Too much clustering information found for sample %s" % (sam_name))
+            raise SnapperDBInterrogationError("Too much clustering information found for sample %s"
+                                              % (sam_name))
         else:
             row = self.cur.fetchone()
 
@@ -335,8 +367,10 @@ class SnapperDBInterrogation(object):
         -------
         res: dict
             {'current_snad': 1.2.3.4.5.6.7,
-             'history': [{'old': '100.2.3.4.5.6.99', 'new': '1.2.3.4.5.6.99', 'time': 2017-09-22 15:56:22.427083},
-                         {'old': '1.2.3.4.5.6.99',   'new': '1.2.3.4.5.6.7',  'time': 2017-09-23 12:00:22.427083},
+             'history': [{'old': '100.2.3.4.5.6.99', 'new': '1.2.3.4.5.6.99',
+                          'time': 2017-09-22 15:56:22.427083},
+                         {'old': '1.2.3.4.5.6.99',   'new': '1.2.3.4.5.6.7',
+                          'time': 2017-09-23 12:00:22.427083},
                          ...]}
         """
 
@@ -344,9 +378,11 @@ class SnapperDBInterrogation(object):
                FROM sample_clusters c, samples s WHERE s.pk_id=c.fk_sample_id AND s.sample_name=%s"
         self.cur.execute(sql, (sam_name, ))
         if self.cur.rowcount < 1:
-            raise SnapperDBInterrogationError("No clustering information found for sample %s" % (sam_name))
+            raise SnapperDBInterrogationError("No clustering information found for sample %s"
+                                              % (sam_name))
         elif self.cur.rowcount > 1:
-            raise SnapperDBInterrogationError("Too much clustering information found for sample %s" % (sam_name))
+            raise SnapperDBInterrogationError("Too much clustering information found for sample %s"
+                                              % (sam_name))
         else:
             row = self.cur.fetchone()
 
@@ -356,7 +392,8 @@ class SnapperDBInterrogation(object):
                'history': []}
 
         sql = "SELECT t0_old, t5_old, t10_old, t25_old, t50_old, t100_old, t250_old, t0_new, \
-                      t5_new, t10_new, t25_new, t50_new, t100_new, t250_new, renamed_at FROM sample_history WHERE fk_sample_id=%s"
+                      t5_new, t10_new, t25_new, t50_new, t100_new, t250_new, renamed_at \
+                      FROM sample_history WHERE fk_sample_id=%s"
         self.cur.execute(sql, (sam_id, ))
         rows = self.cur.fetchall()
         for r in rows:
@@ -399,7 +436,8 @@ class SnapperDBInterrogation(object):
 
             missing = set(samples).difference(set(treesams.keys()))
             if len(missing) > 0:
-                logging.warning("The following sample names were not found in the database: %s", str(list(missing)))
+                logging.warning("The following sample names were not found in the database: %s",
+                                str(list(missing)))
             else:
                 logging.info("All samples names provided were found in the database.")
 
@@ -458,7 +496,11 @@ class SnapperDBInterrogation(object):
         iNofSams = len(treesams.keys())
         logging.info("Calculating %i distances. Patience!", ((iNofSams**2) - iNofSams) / 2)
 
-        dist_mat = get_distance_matrix(self.cur, treesams.values())
+        dist_mat = None
+        if self.fusion_url == None:
+            dist_mat = get_distance_matrix(self.cur, treesams.values())
+        else:
+            dist_mat = get_distance_matrix_fusion(treesams.values(), self.fusion_url)
 
         if dm != None:
             logging.info("Distance matrix written to file: %s", dm)
