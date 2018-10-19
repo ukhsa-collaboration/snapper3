@@ -66,8 +66,8 @@ the same distance as the nth sample are also returned. [DEFAULT: 1]""")
                       type=int,
                       default=None,
                       dest="distance",
-                      help="""Return all samples closer or equal to this distance. [DEFAULT: None, i.e.
-return the n closest samples specified by -n option.]""")
+                      help="""Return all samples closer or equal to this distance. [DEFAULT:
+None, i.e. return the n closest samples specified by -n option.]""")
 
     return args
 
@@ -87,7 +87,7 @@ def main(args):
 
     logging.debug("Args received: %s", str(args))
 
-    with SnapperDBInterrogation(conn_string=args['db']) as sdbi:
+    with SnapperDBInterrogation(conn_string=args['db'], fusion=args['fusion']) as sdbi:
         try:
 
             result = None
