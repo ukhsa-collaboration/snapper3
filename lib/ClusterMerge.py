@@ -6,7 +6,7 @@ import sys
 import logging
 from datetime import datetime
 
-from lib.distances import get_distances
+from lib.distances import get_distances, get_distances_fusion
 
 __version__= '0.1'
 __date__= '14Jul2017'
@@ -34,6 +34,9 @@ class ClusterMerge(object):
         self.final_members = None
         self.stats = None
         self.member_stats = None
+        self.fusion = None
+        if kwargs.has_key('fusion'):
+            self.fusion = kwargs['fusion']
 
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -72,7 +75,10 @@ class ClusterMerge(object):
 
         for fm in self.final_members:
             others = [x for x in self.final_members if x != fm]
-            dists = get_distances(cur, fm, others)
+            if self.fusion != None:
+                dists = get_distances_fusion(fm, others, self.fusion)
+            else:
+                dists = get_distances(cur, fm, others)
             x = [d for (s, d) in dists]
             self.member_stats[fm] = sum(x) / float(len(x))
 

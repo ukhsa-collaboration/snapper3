@@ -11,7 +11,7 @@ from lib.ClusterStats import ClusterStats
 
 # --------------------------------------------------------------------------------------------------
 
-def check_merging_needed(cur, distances, new_snad, levels=[0, 5, 10, 25, 50, 100, 250]):
+def check_merging_needed(cur, distances, new_snad, fusion, levels=[0, 5, 10, 25, 50, 100, 250]):
     """
     Checks whether the assignment of the new sample to any of the proposed clusters would require
     the proposed cluster to be merge with any other clusters
@@ -25,7 +25,9 @@ def check_merging_needed(cur, distances, new_snad, levels=[0, 5, 10, 25, 50, 100
         e.g. [(298, 0), (37, 3), (55, 4)]
     new_snad: list
         [t0 or None, t5 or None, t10, t25, t50, t100, t250]
-
+    fusion: str
+        url of fusion webservice if available
+        
     Returns
     -------
     merges: dict
@@ -57,7 +59,7 @@ def check_merging_needed(cur, distances, new_snad, levels=[0, 5, 10, 25, 50, 100
                 sizes = {}
                 for row in rows:
                     sizes[row['cluster_name']] = row['nof_members']
-                oMer = ClusterMerge(level=lvl, clusters=clusters.keys(), sizes=sizes)
+                oMer = ClusterMerge(level=lvl, clusters=clusters.keys(), sizes=sizes, fusion=fusion)
                 merges[lvl] = oMer
 
     return merges

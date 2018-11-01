@@ -164,7 +164,7 @@ def main(args):
                      new_snad[1],
                      new_snad[0])
 
-        merges = merging.check_merging_needed(cur, distances, new_snad)
+        merges = merging.check_merging_needed(cur, distances, new_snad, args['fusion'])
 
         logging.info("Merges that would be required to make this assignment: %s",
                      str([str(m) for m in merges.values()]))
