@@ -57,8 +57,6 @@ class SnapperDBInterrogation(object):
 
         """
 
-        self.conn = None
-        self.cur = None
         self.connstring = None
         self.fusion_url = None
 
