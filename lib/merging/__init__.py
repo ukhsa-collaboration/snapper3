@@ -5,7 +5,7 @@ author: ulf.schaefer@phe.gov.uk
 
 """
 
-from lib.distances import get_all_pw_dists, get_distances
+from lib.distances import get_all_pw_dists, get_distances, get_distances_fusion
 from lib.ClusterMerge import ClusterMerge
 from lib.ClusterStats import ClusterStats
 
@@ -27,7 +27,7 @@ def check_merging_needed(cur, distances, new_snad, fusion, levels=[0, 5, 10, 25,
         [t0 or None, t5 or None, t10, t25, t50, t100, t250]
     fusion: str
         url of fusion webservice if available
-        
+
     Returns
     -------
     merges: dict
@@ -128,7 +128,10 @@ def get_stats_for_merge(cur, oMerge):
 
         # get all distances for new members and update stats obj iteratively
         for nm in new_members:
-            dists = get_distances(cur, nm, current_mems)
+            if oMerge.fusion == None:
+                dists = get_distances(cur, nm, current_mems)
+            else:
+                dists = get_distances_fusion(nm, current_mems, oMerge.fusion)
             all_dists_to_new_member = [d for (s, d) in dists]
             oMerge.stats.add_member(all_dists_to_new_member)
             current_mems.append(nm)
@@ -180,7 +183,7 @@ def do_the_merge(cur, oMerge):
 
 # --------------------------------------------------------------------------------------------------
 
-def get_mean_distance_for_merged_cluster(cur, samid, mems):
+def get_mean_distance_for_merged_cluster(cur, samid, mems, fusion=None):
     """
     Get the mean distance of a sample (samid) to all samples in the mems list.
 
@@ -192,6 +195,9 @@ def get_mean_distance_for_merged_cluster(cur, samid, mems):
         sample_id
     mems: list of int
         all members if this cluster
+    fusion: str
+        URL of fusion webservice
+
     Returns
     -------
     m: float
@@ -201,7 +207,10 @@ def get_mean_distance_for_merged_cluster(cur, samid, mems):
     m = None
     assert samid in mems
     others = [x for x in mems if x != samid]
-    dists = get_distances(cur, samid, others)
+    if fusion == None:
+        dists = get_distances(cur, samid, others)
+    else:
+        dists = get_distances_fusion(samid, others, fusion)
     d = [d for (s, d) in dists]
     assert len(d) == len(others)
     m = sum(d) / float(len(d))

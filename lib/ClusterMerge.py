@@ -44,12 +44,13 @@ class ClusterMerge(object):
         '''
         overwrite __str__() to tell it how to print itself
         '''
-        return "level: %s, clusters: %s, cluster_sizes: %s, final name: %s, nof final members: %s" \
+        return "level: %s, clusters: %s, cluster_sizes: %s, final name: %s, nof final members: %s, fusion: %s" \
                 %(self.t_level,
                   self.org_clusters,
                   self.org_sizes,
                   "tbd" if self.final_name == None else self.final_name,
-                  "tbd" if self.final_members == None else len(self.final_members))
+                  "tbd" if self.final_members == None else len(self.final_members),
+                  self.fusion)
 
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 

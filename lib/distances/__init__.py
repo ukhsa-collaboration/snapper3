@@ -34,7 +34,7 @@ def get_relevant_samples(cur):
     cur.execute(sql)
     rows = cur.fetchall()
     relv_samples = [r['fk_sample_id'] for r in rows]
-    logging.info("Found %i samples in the database relavant for clustering.", len(relv_samples))
+    logging.info("Found %i samples in the database relevant for clustering.", len(relv_samples))
     return relv_samples
 
 # --------------------------------------------------------------------------------------------------

@@ -236,7 +236,7 @@ def check_zscores(cur, distances, new_snad, merges, levels=[0, 5, 10, 25, 50, 10
             old_medis = None
             if merges.has_key(lvl) == True:
                 # there was a merge, so we can't use what's in the db
-                old_medis = get_mean_distance_for_merged_cluster(cur, c_mem, current_mems)
+                old_medis = get_mean_distance_for_merged_cluster(cur, c_mem, current_mems, merges[lvl].fusion)
                 merge_per_sample_stats[c_mem] = old_medis
             else:
                 # if there was no merge, get the mean distance of this member to all other members
