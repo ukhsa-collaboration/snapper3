@@ -181,7 +181,11 @@ def calculate_per_sample_cluster_stats(target_cur, dm):
                         try:
                             other_dists.append(dm[sample_name][sam])
                         except KeyError:
-                            raise SystemExit('Problem with distance matrix. No entry for %s and %s', sample_name, sam)
+                            logging.warning("Distance from %s to %s is missing. Calculating ..", sample_name, sam)
+                            missing_d = calculate_missing_distance(target_cur, sample_name, sam)
+                            logging.warning("Distance is %i", missing_d)
+                            other_dists.append(missing_d)
+                            #raise SystemExit('Problem with distance matrix. No entry for %s and %s', s1, s2)
                 # store mean of distances to other members in dict
                 means[lvl] = sum(other_dists)/float(len(other_dists))
 
@@ -239,7 +243,7 @@ def calculate_per_cluster_stats(target_cur, dm):
                 # check this complies with the count from above
                 assert len(clu_samples) == nof_mems
 
-                clu_dists = get_all_pw_dists(clu_samples, dm)
+                clu_dists = get_all_pw_dists(target_cur, clu_samples, dm)
 
                 # check we get the expected number of distances back
                 assert len(clu_dists) == nof_pw_dists
@@ -258,7 +262,7 @@ def calculate_per_cluster_stats(target_cur, dm):
 
 # --------------------------------------------------------------------------------------------------
 
-def get_all_pw_dists(samples, dm):
+def get_all_pw_dists(target_cur, samples, dm):
     """
     Get all pairwise distances between the sampkes in the list.
 
@@ -289,8 +293,50 @@ def get_all_pw_dists(samples, dm):
                     try:
                         dists.append(dm[s2][s1])
                     except KeyError:
-                        raise SystemExit('Problem with distance matrix. No entry for %s and %s', s1, s2)
+                        logging.warning("Distance from %s to %s is missing. Calculating ..", s1, s2)
+                        missing_d = calculate_missing_distance(target_cur, s1, s2)
+                        logging.warning("Distance is %i", missing_d)
+                        dists.append(missing_d)
+                        #raise SystemExit('Problem with distance matrix. No entry for %s and %s', s1, s2)
     return dists
+
+# --------------------------------------------------------------------------------------------------
+
+def calculate_missing_distance(target_cur, s1, s2):
+
+    sql = "SELECT pk_id FROM samples WHERE sample_name=%s"
+    target_cur.execute(sql, (s1, ))
+    s1_id = target_cur.fetchone()[0]
+
+    sql = "SELECT pk_id FROM samples WHERE sample_name=%s"
+    target_cur.execute(sql, (s2, ))
+    s2_id = target_cur.fetchone()[0]
+
+    # get list of contig ids from database
+    sql = "SELECT pk_id FROM contigs"
+    target_cur.execute(sql)
+    rows = target_cur.fetchall()
+    contig_ids = [r['pk_id'] for r in rows]
+
+    d = {}
+    for cid in contig_ids:
+        t0 = time()
+        target_cur.callproc("get_sample_distances_by_id", [s1_id, cid, [s2_id]])
+        result = target_cur.fetchall()
+        t1 = time()
+        logging.info("Calculated %i distances on contig %i with 'get_sample_distances_by_id' in %.3f seconds",
+                     len(result), cid, t1 - t0)
+
+        # sum up if there are more than one contigs
+        for res in result:
+            if res[2] == None:
+                res[2] = 0
+            try:
+                d[res[0]] += res[2]
+            except KeyError:
+                d[res[0]] = res[2]
+
+    return d[s2_id]
 
 # --------------------------------------------------------------------------------------------------
 
